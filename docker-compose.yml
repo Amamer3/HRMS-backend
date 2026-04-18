@@ -1,0 +1,47 @@
+# PostgreSQL + API
+#   docker compose up -d --build
+#   API: http://localhost:4000
+# Run DB migrations once: docker compose run --rm api npx prisma migrate deploy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-echt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-echt_hr}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - echt_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-echt}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-echt_hr}?schema=public
+      PORT: "4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - echt_net
+
+networks:
+  echt_net:
+    driver: bridge
+
+volumes:
+  pg_data:
