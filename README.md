@@ -62,18 +62,20 @@ flowchart TB
     Graph[Microsoft Graph optional]
   end
 
-  subgraph data["Data"]
+  subgraph dbstore["Data store"]
     PG[(PostgreSQL)]
   end
 
-  clients -->|"HTTPS JSON Bearer JWT"| API
+  SPA --> API
+  Mobile --> API
+  Script --> API
   API --> AUTH
   AUTH --> Entra
   AUTH --> PG
   API --> RBAC
   RBAC --> CTRL
   CTRL --> PG
-  CTRL -.->|"email or app permissions"| Graph
+  CTRL -.-> Graph
 ```
 
 **Docker Compose** (development-style stack: API + Postgres on a shared bridge network):
@@ -81,18 +83,18 @@ flowchart TB
 ```mermaid
 flowchart LR
   subgraph host["Host"]
-    L4000["localhost:4000"]
-    L5432["localhost:5432"]
+    HostApi["localhost port 4000"]
+    HostPg["localhost port 5432"]
   end
 
   subgraph compose["Docker Compose network echt_net"]
-    API["api service Node 22"]
-    PG["postgres 16 alpine"]
+    ApiCtr["api container Node 22"]
+    PgCtr["postgres 16 alpine"]
   end
 
-  L4000 --> API
-  L5432 --> PG
-  API -->|"DATABASE_URL hostname postgres"| PG
+  HostApi --> ApiCtr
+  HostPg --> PgCtr
+  ApiCtr --> PgCtr
 ```
 
 ---
@@ -104,29 +106,29 @@ How source files are grouped and what each area is responsible for.
 ```mermaid
 flowchart TB
   subgraph entry["Entry"]
-    S["src/server.ts load env listen"]
-    A["src/app.ts createApp middleware routes"]
+    S[server.ts boot and listen]
+    A[app.ts middleware and routes]
   end
 
   subgraph config["Configuration"]
-    E["src/config/env.ts Zod validated env"]
-    P["src/config/permissions.ts Permission keys and ROLE_PERMISSIONS"]
+    E[env.ts Zod validated env]
+    P[permissions.ts keys and matrix]
   end
 
   subgraph http["HTTP layer"]
-    R["src/routes/v1/index.ts versioned router"]
-    C["src/controllers/*.ts request handlers"]
-    M["src/middleware authJwt auditMiddleware requireRole errorHandler"]
+    R[routes v1 index router]
+    C[controllers directory]
+    M[middleware auth audit roles errors]
   end
 
   subgraph domain["Domain logic"]
-    SV["src/services/*.ts workflows notifications geofence payroll rules"]
-    L["src/lib/prisma.ts PrismaClient singleton"]
+    SV[services workflows notifications]
+    L[prisma client singleton]
   end
 
-  subgraph db["Database"]
-    PR["prisma/schema.prisma"]
-    MI["prisma/migrations"]
+  subgraph prismaBlock["Database"]
+    PR[Prisma schema file]
+    MI[Prisma migrations]
   end
 
   S --> A
@@ -139,6 +141,8 @@ flowchart TB
   L --> PR
   PR --> MI
 ```
+
+Note: diagram uses short labels; real paths are under `prisma/schema.prisma` and `prisma/migrations`.
 
 | Path | Role |
 |------|------|
@@ -170,11 +174,11 @@ flowchart TD
   G4 --> G5["auditContext x-correlation-id"]
   G5 --> R{Route}
 
-  R -->|"GET /health"| H[healthController JSON status ok]
-  R -->|"/api/v1"| A1[createAuthMiddleware]
+  R -->|GET health path| H[healthController JSON status ok]
+  R -->|api v1 prefix| A1[createAuthMiddleware]
   A1 --> A2[auditHttpMutations]
   A2 --> A3["buildV1Router per-route requirePermission"]
-  A3 --> EH[errorHandler if error passed to next]
+  A3 --> EH[Express error handler middleware]
 
   H --> OUT[HTTP response]
   A3 --> OUT
@@ -191,34 +195,24 @@ The auth middleware validates the JWT, resolves signing keys from Entra JWKS, ma
 sequenceDiagram
   participant C as Client
   participant E as Express
-  participant M as authJwt middleware
-  participant J as Entra JWKS endpoint
-  participant D as Prisma PostgreSQL
+  participant M as AuthJwt
+  participant J as EntraJWKS
+  participant D as Database
 
-  C->>E: Request with Authorization Bearer token
-  E->>M: invoke middleware
-
-  alt Missing Bearer header
-    M-->>C: 401 unauthorized missing bearer token
-  else Bearer present
-    M->>J: getSigningKey by JWT kid
-    J-->>M: RSA public key
-    M->>M: jwt.verify RS256 audience issuer
-    alt Invalid or expired token
-      M-->>C: 401 invalid or expired token
-    else Token valid
-      M->>M: read oid groups email name
-      M->>D: findMany EntraGroupRoleMap by group ids
-      D-->>M: role rows
-      M->>M: build req.appRoles Set
-      M->>D: upsert User by entraObjectId
-      D-->>M: user id
-      M->>M: set req.auth req.userId req.appRoles
-      M-->>E: next
-    end
-  end
-  Note over E,C: Express runs route handler and sends HTTP response
+  C->>E: HTTP request with Bearer token
+  E->>M: Run auth middleware
+  M->>J: Resolve signing key by JWT kid
+  J-->>M: RSA public key
+  M->>M: jwt verify RS256 audience issuer
+  M->>D: Load EntraGroupRoleMap for group ids
+  D-->>M: Role mappings
+  M->>D: Upsert User by entraObjectId
+  D-->>M: Internal user id
+  M-->>E: next with req userId and appRoles
+  E-->>C: JSON response from route handler
 ```
+
+Missing or invalid tokens return **401** before the database steps; the diagram shows the **happy path** only.
 
 **Developer-facing details:**
 
@@ -236,9 +230,9 @@ Route handlers use `requirePermission(Permission.SOME_KEY)` (or specialized help
 ```mermaid
 flowchart TD
   RP[requirePermission keys] --> SA{appRoles includes SUPER_ADMIN}
-  SA -->|yes| OK[next handler]
-  SA -->|no| ANY{Any role grants one of the required permission keys}
-  ANY -->|yes| OK
+  SA -->|yes| Nxt[Call next handler]
+  SA -->|no| ANY{Any role grants a required permission key}
+  ANY -->|yes| Nxt
   ANY -->|no| F[403 forbidden with required keys]
 ```
 
@@ -296,9 +290,9 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  AC[auditContext] --> CID["req.correlationId from X-Correlation-Id or UUID"]
-  CID --> HDR["response header X-Correlation-Id"]
-  MUT[auditHttpMutations] -->|"POST PUT PATCH DELETE on success"| AL[AuditLog append-only row]
+  AC[auditContext] --> CID[correlation id from header or UUID]
+  CID --> HDR[echo correlation id on response]
+  MUT[auditHttpMutations] -->|mutations on success| AL[AuditLog append-only row]
   MAN[appendAuditLog in controllers] --> AL
 ```
 
@@ -361,22 +355,24 @@ Multi-stage image build and runtime:
 
 ```mermaid
 flowchart LR
-  subgraph stage1["Stage build node 22 alpine"]
+  subgraph buildStage["Docker build stage"]
     B1[COPY package files]
     B2[npm ci]
-    B3[COPY prisma src tsconfig]
-    B4[npx prisma generate]
-    B5[npm run build tsc]
+    B3[COPY prisma and src]
+    B4[prisma generate]
+    B5[tsc build to dist]
     B1 --> B2 --> B3 --> B4 --> B5
   end
 
-  subgraph stage2["Stage runtime node 22 alpine"]
+  subgraph runStage["Docker runtime stage"]
     R1[non-root user nodejs]
-    R2["CMD node dist/server.js"]
-    R3[EXPOSE 4000]
+    R2[node dist server js]
+    R3[listen on port 4000]
   end
 
-  stage1 -->|"copy package.json node_modules dist prisma"| stage2
+  B5 --> R1
+  R1 --> R2
+  R2 --> R3
 ```
 
 ---
