@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: echt-hr-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run prisma:migrate:deploy && npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: echt-hr-db
+          property: connectionString
+      - key: AZURE_AD_TENANT_ID
+        sync: false
+      - key: AZURE_AD_CLIENT_ID
+        sync: false
+      - key: AZURE_AD_CLIENT_SECRET
+        sync: false
+      - key: AZURE_AD_ISSUER
+        sync: false
+      - key: AZURE_AD_AUDIENCE
+        sync: false
+
+databases:
+  - name: echt-hr-db
+    plan: free
+    databaseName: echt_hr
+    user: echt

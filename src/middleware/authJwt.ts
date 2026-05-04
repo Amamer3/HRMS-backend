@@ -240,8 +240,42 @@ export function createAuthMiddleware(env: Env) {
       const displayName = typeof decoded.name === "string" ? decoded.name : email?.split("@")[0] ?? "User";
       const userEmail = email ?? `${oid}@users.noaadomain.local`;
 
+      // Define role priority for merging
+      const rolePriority: Record<AppRole, number> = {
+        SUPER_ADMIN: 100,
+        HR_ADMIN: 80,
+        MANAGER: 60,
+        EMPLOYEE: 40,
+        READ_ONLY: 20,
+      };
+
+      // Resolve the highest role from Entra groups
+      const groupRole = req.appRoles.includes("SUPER_ADMIN") ? "SUPER_ADMIN" 
+                      : req.appRoles.includes("HR_ADMIN") ? "HR_ADMIN"
+                      : req.appRoles.includes("MANAGER") ? "MANAGER"
+                      : req.appRoles.includes("EMPLOYEE") ? "EMPLOYEE"
+                      : req.appRoles.length > 0 ? req.appRoles[0]
+                      : "EMPLOYEE";
+
+      // Fetch existing user to check for manual role overrides
+      const existingUser = await prisma.user.findUnique({
+        where: { entraObjectId: oid },
+        select: { role: true },
+      });
+
+      // Determine final role: Higher priority wins
+      let finalRole = groupRole as AppRole;
+      if (existingUser?.role) {
+        const currentPriority = rolePriority[existingUser.role] || 0;
+        const resolvedPriority = rolePriority[finalRole] || 0;
+        
+        // If current DB role is higher priority, keep it (manual override)
+        if (currentPriority > resolvedPriority) {
+          finalRole = existingUser.role;
+        }
+      }
+
       // Database registration: Always upsert the user record on login.
-      // Existence checks (isActive, etc.) have been removed to troubleshoot login issues.
       const user = await prisma.user.upsert({
         where: { entraObjectId: oid },
         create: {
@@ -250,15 +284,20 @@ export function createAuthMiddleware(env: Env) {
           displayName,
           lastGroupSyncAt: new Date(),
           isActive: true,
+          role: finalRole,
         },
         update: {
           email: userEmail,
           displayName,
           lastGroupSyncAt: new Date(),
+          role: finalRole,
         },
-        select: { id: true },
+        select: { id: true, role: true },
       });
-      
+
+      // Final session roles: Unique set of group roles + persistent DB role
+      roleSet.add(user.role);
+      req.appRoles = [...roleSet];
       req.userId = user.id;
 
       next();

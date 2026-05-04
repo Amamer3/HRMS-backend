@@ -1,21 +1,84 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
+import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AttendanceSyncService } from "../services/attendanceSyncService.js";
 import { appendAuditLog } from "../middleware/auditMiddleware.js";
 
 const clockBody = z.object({
-  branchId: z.string().uuid(),
+  branchId: z.string().uuid().optional(),
+  branch_id: z.string().uuid().optional(), // Map from frontend
   type: z.enum(["CLOCK_IN", "CLOCK_OUT"]),
-  latitude: z.number(),
-  longitude: z.number(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  lat: z.number().optional(), // Map from frontend
+  lng: z.number().optional(), // Map from frontend
   accuracyM: z.number().optional().nullable(),
-  clientTimestamp: z.string().datetime(),
+  accuracy: z.number().optional().nullable(), // Map from frontend
+  clientTimestamp: z.string().datetime().optional(),
   idempotencyKey: z.string().uuid().optional().nullable(),
   source: z.enum(["ONLINE", "OFFLINE_SYNC"]).default("ONLINE"),
 });
 
 const syncBody = z.array(clockBody).max(50);
+
+const correctionBody = z.object({
+  missed_date: z.string(), // YYYY-MM-DD
+  reason: z.string(),
+});
+
+export async function getTodayAttendance(req: Request, res: Response) {
+  if (!req.userId) {
+    res.status(400).json({ error: "user_not_provisioned" });
+    return;
+  }
+
+  const today = new Date();
+  const workDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  const session = await prisma.attendanceSession.findUnique({
+    where: { userId_workDate: { userId: req.userId, workDate } },
+    include: {
+      events: { orderBy: { clientTimestamp: "asc" } },
+      branch: true,
+    },
+  });
+
+  if (!session) {
+    res.json(null);
+    return;
+  }
+
+  // Calculate total hours if closed
+  let totalHours = 0;
+  const clockIn = session.events.find(e => e.type === "CLOCK_IN" && e.accepted);
+  const clockOut = session.events.find(e => e.type === "CLOCK_OUT" && e.accepted);
+
+  if (clockIn && clockOut) {
+    totalHours = (clockOut.clientTimestamp.getTime() - clockIn.clientTimestamp.getTime()) / (1000 * 60 * 60);
+  }
+
+  // Check if late (after 9:00 AM)
+  const isLate = clockIn ? (clockIn.clientTimestamp.getUTCHours() > 9 || (clockIn.clientTimestamp.getUTCHours() === 9 && clockIn.clientTimestamp.getUTCMinutes() > 0)) : false;
+
+  res.json({
+    ...session,
+    totalHours: totalHours.toFixed(2),
+    isLate,
+    clockIn: clockIn?.clientTimestamp,
+    clockOut: clockOut?.clientTimestamp,
+  });
+}
+
+export async function checkIn(req: Request, res: Response) {
+  req.body.type = "CLOCK_IN";
+  return postClock(req, res);
+}
+
+export async function checkOut(req: Request, res: Response) {
+  req.body.type = "CLOCK_OUT";
+  return postClock(req, res);
+}
 
 export async function postClock(req: Request, res: Response) {
   const body = clockBody.parse(req.body);
@@ -24,17 +87,41 @@ export async function postClock(req: Request, res: Response) {
     return;
   }
 
-  const branch = await prisma.branch.findUniqueOrThrow({ where: { id: body.branchId } });
+  // Map fields from frontend
+  const lat = body.lat ?? body.latitude;
+  const lng = body.lng ?? body.longitude;
+  const accuracy = body.accuracy ?? body.accuracyM;
+  let branchId = body.branch_id ?? body.branchId;
+
+  if (lat === undefined || lng === undefined) {
+    res.status(400).json({ error: "latitude_and_longitude_required" });
+    return;
+  }
+
+  // If branchId is not provided, try to find the user's primary branch
+  if (!branchId) {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { primaryBranchId: true },
+    });
+    if (!user?.primaryBranchId) {
+      res.status(400).json({ error: "branch_id_required" });
+      return;
+    }
+    branchId = user.primaryBranchId;
+  }
+
+  const branch = await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   const svc = new AttendanceSyncService(prisma);
   const result = await svc.applyClockEvent(
     {
       userId: req.userId,
-      branchId: body.branchId,
+      branchId: branchId,
       type: body.type,
-      latitude: body.latitude,
-      longitude: body.longitude,
-      accuracyM: body.accuracyM,
-      clientTimestamp: new Date(body.clientTimestamp),
+      latitude: lat,
+      longitude: lng,
+      accuracyM: accuracy,
+      clientTimestamp: body.clientTimestamp ? new Date(body.clientTimestamp) : new Date(),
       idempotencyKey: body.idempotencyKey,
       source: body.source,
     },
@@ -54,6 +141,108 @@ export async function postClock(req: Request, res: Response) {
   res.status(result.status === "created" ? 201 : 200).json(result);
 }
 
+export async function getAttendanceHistory(req: Request, res: Response) {
+  if (!req.userId) {
+    res.status(400).json({ error: "user_not_provisioned" });
+    return;
+  }
+
+  const history = await prisma.attendanceSession.findMany({
+    where: { userId: req.userId },
+    orderBy: { workDate: "desc" },
+    take: 30,
+    include: {
+      events: { orderBy: { clientTimestamp: "asc" } },
+      branch: true,
+    },
+  });
+
+  const formattedHistory = history.map(session => {
+    const clockIn = session.events.find(e => e.type === "CLOCK_IN" && e.accepted);
+    const clockOut = session.events.find(e => e.type === "CLOCK_OUT" && e.accepted);
+    let totalHours = 0;
+    if (clockIn && clockOut) {
+      totalHours = (clockOut.clientTimestamp.getTime() - clockIn.clientTimestamp.getTime()) / (1000 * 60 * 60);
+    }
+    const isLate = clockIn ? (clockIn.clientTimestamp.getUTCHours() > 9 || (clockIn.clientTimestamp.getUTCHours() === 9 && clockIn.clientTimestamp.getUTCMinutes() > 0)) : false;
+
+    return {
+      date: session.workDate.toISOString().split("T")[0],
+      clockIn: clockIn?.clientTimestamp,
+      clockOut: clockOut?.clientTimestamp,
+      totalHours: totalHours.toFixed(2),
+      isLate,
+      status: session.status,
+    };
+  });
+
+  res.json(formattedHistory);
+}
+
+export async function requestCorrection(req: Request, res: Response) {
+  const body = correctionBody.parse(req.body);
+  if (!req.userId) {
+    res.status(400).json({ error: "user_not_provisioned" });
+    return;
+  }
+
+  const workDate = new Date(body.missed_date);
+
+  // Use Workflow engine for corrections
+  const workflow = await prisma.workflowInstance.create({
+    data: {
+      module: "HR_ATTENDANCE_ADJUSTMENT",
+      entityType: "AttendanceAdjustment",
+      entityId: crypto.randomUUID(), // Placeholder for now, will update after creating adjustment
+      currentState: "SUBMITTED",
+      ownedByUserId: req.userId,
+    },
+  });
+
+  const adjustment = await (prisma as any).attendanceAdjustment.create({
+    data: {
+      userId: req.userId,
+      workDate,
+      reason: body.reason,
+      requestedChanges: {}, // Frontend can specify details if needed
+      workflowInstanceId: workflow.id,
+    },
+  });
+
+  // Update workflow with real entityId
+  await prisma.workflowInstance.update({
+    where: { id: workflow.id },
+    data: { entityId: adjustment.id },
+  });
+
+  res.status(201).json(adjustment);
+}
+
+export async function getMyCorrections(req: Request, res: Response) {
+  if (!req.userId) {
+    res.status(400).json({ error: "user_not_provisioned" });
+    return;
+  }
+
+  const corrections = await (prisma as any).attendanceAdjustment.findMany({
+    where: { userId: req.userId },
+    include: {
+      workflowInstance: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const formatted = corrections.map((c: any) => ({
+    id: c.id,
+    missed_date: c.workDate.toISOString().split("T")[0],
+    reason: c.reason,
+    status: c.workflowInstance.currentState,
+    createdAt: c.createdAt,
+  }));
+
+  res.json(formatted);
+}
+
 export async function postClockSyncBatch(req: Request, res: Response) {
   const batch = syncBody.parse(req.body);
   if (!req.userId) {
@@ -63,16 +252,32 @@ export async function postClockSyncBatch(req: Request, res: Response) {
   const svc = new AttendanceSyncService(prisma);
   const results = [];
   for (const item of batch) {
-    const branch = await prisma.branch.findUniqueOrThrow({ where: { id: item.branchId } });
+    const lat = item.lat ?? item.latitude;
+    const lng = item.lng ?? item.longitude;
+    const accuracy = item.accuracy ?? item.accuracyM;
+    let branchId = item.branch_id ?? item.branchId;
+
+    if (lat === undefined || lng === undefined) continue;
+
+    if (!branchId) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { primaryBranchId: true },
+      });
+      branchId = user?.primaryBranchId || "";
+    }
+    if (!branchId) continue;
+
+    const branch = await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
     const r = await svc.applyClockEvent(
       {
         userId: req.userId,
-        branchId: item.branchId,
+        branchId: branchId,
         type: item.type,
-        latitude: item.latitude,
-        longitude: item.longitude,
-        accuracyM: item.accuracyM,
-        clientTimestamp: new Date(item.clientTimestamp),
+        latitude: lat,
+        longitude: lng,
+        accuracyM: accuracy,
+        clientTimestamp: item.clientTimestamp ? new Date(item.clientTimestamp) : new Date(),
         idempotencyKey: item.idempotencyKey,
         source: item.source,
       },
@@ -83,7 +288,6 @@ export async function postClockSyncBatch(req: Request, res: Response) {
   res.status(200).json({ results });
 }
 
-/** GPS audit — HR Admin / Super Admin only (enforced at router). */
 export async function getClockEventsForUser(req: Request, res: Response) {
   const userId = String(req.params.userId);
   const take = req.query.take ? Number(req.query.take) : 50;

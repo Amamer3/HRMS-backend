@@ -14,6 +14,7 @@ export const Permission = {
   HR_LEAVE_READ: "hr.leave.read",
   HR_LEAVE_WRITE: "hr.leave.write",
   HR_LEAVE_APPROVE: "hr.leave.approve",
+  HR_ATTENDANCE_READ: "hr.attendance.read",
   HR_ATTENDANCE_READ_SENSITIVE: "hr.attendance.read_sensitive",
   HR_ATTENDANCE_WRITE: "hr.attendance.write",
 
@@ -55,6 +56,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
     Permission.HR_LEAVE_READ,
     Permission.HR_LEAVE_WRITE,
     Permission.HR_LEAVE_APPROVE,
+    Permission.HR_ATTENDANCE_READ,
     Permission.HR_ATTENDANCE_READ_SENSITIVE,
     Permission.HR_ATTENDANCE_WRITE,
     Permission.SELF_PROFILE,

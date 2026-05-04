@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
+import type { AppRole } from "@prisma/client";
 
 // ========================
 // BRANCHES
@@ -118,6 +119,8 @@ export async function getUsers(req: Request, res: Response) {
         displayName: true,
         jobTitle: true,
         isActive: true,
+        role: true,
+        entraObjectId: true,
         departmentId: true,
         department: {
           select: {
@@ -150,7 +153,21 @@ export async function getUsers(req: Request, res: Response) {
       orderBy: { createdAt: "desc" },
     });
 
-    res.json(users);
+    // Map internal roles to frontend expected lowercase strings
+    const roleMap: Record<string, string> = {
+      SUPER_ADMIN: "super_admin",
+      HR_ADMIN: "hr_admin",
+      MANAGER: "manager",
+      EMPLOYEE: "employee",
+      READ_ONLY: "employee",
+    };
+
+    res.json(users.map((u) => ({
+      ...u,
+      name: u.displayName,
+      role: roleMap[u.role] || "employee",
+      employee_id: u.entraObjectId, // Using Entra ID as staff ID placeholder
+    })));
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch users" });
   }
@@ -159,18 +176,38 @@ export async function getUsers(req: Request, res: Response) {
 export async function updateUserRole(req: Request, res: Response) {
   try {
     const { userId } = req.params as { userId: string };
-    const { role } = req.body;
+    const { role: requestedRole } = req.body;
 
-    if (!role) {
+    if (!requestedRole) {
       res.status(400).json({ error: "Role is required" });
       return;
     }
 
-    // Update the user's role mapping in EntraGroupRoleMap
-    // First, get the user to understand their current state
+    // Map frontend lowercase roles to backend enum
+    const roleInputMap: Record<string, AppRole> = {
+      "super_admin": "SUPER_ADMIN",
+      "hr_admin": "HR_ADMIN",
+      "manager": "MANAGER",
+      "employee": "EMPLOYEE"
+    };
+
+    const targetRole = roleInputMap[requestedRole];
+    if (!targetRole) {
+      res.status(400).json({ error: "Invalid role. Must be one of: super_admin, hr_admin, manager, employee" });
+      return;
+    }
+
+    // Permission Check: Only SUPER_ADMIN can create/assign another SUPER_ADMIN
+    const requesterRoles = req.appRoles || [];
+    if (targetRole === "SUPER_ADMIN" && !requesterRoles.includes("SUPER_ADMIN")) {
+      res.status(403).json({ error: "Only a super_admin can assign the super_admin role" });
+      return;
+    }
+
+    // Get the user to update
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true },
+      select: { id: true, email: true, displayName: true },
     });
 
     if (!user) {
@@ -178,54 +215,46 @@ export async function updateUserRole(req: Request, res: Response) {
       return;
     }
 
-    // For now, we'll create/update an entry in EntraGroupRoleMap
-    // In production, this would sync with Azure AD groups
+    // Update the user's role directly on the User model
+    await prisma.user.update({
+      where: { id: userId },
+      data: { role: targetRole },
+    });
+
+    // Sync with EntraGroupRoleMap for persistent mapping
+    // We use a pseudo-group ID for manual assignments to ensure they persist across syncs
     await prisma.entraGroupRoleMap.upsert({
       where: {
-        entraGroupId: `${user.id}-manual-role`,
+        entraGroupId: `manual-role-${user.id}`,
       },
       create: {
-        entraGroupId: `${user.id}-manual-role`,
-        role,
+        entraGroupId: `manual-role-${user.id}`,
+        role: targetRole,
         description: `Manual role assignment for ${user.email}`,
       },
       update: {
-        role,
+        role: targetRole,
         description: `Manual role assignment for ${user.email}`,
       },
     });
 
-    // Check if a UserRoleSnapshot exists for this user
-    const existingSnapshot = await prisma.userRoleSnapshot.findFirst({
-      where: { userId: userId },
+    // Create a new UserRoleSnapshot to record this change
+    await prisma.userRoleSnapshot.create({
+      data: {
+        userId: userId,
+        roles: [targetRole],
+        syncedAt: new Date(),
+      },
     });
-
-    let snapshot;
-    if (existingSnapshot) {
-      snapshot = await prisma.userRoleSnapshot.update({
-        where: { id: existingSnapshot.id },
-        data: {
-          roles: [role],
-          syncedAt: new Date(),
-        },
-      });
-    } else {
-      snapshot = await prisma.userRoleSnapshot.create({
-        data: {
-          userId: userId,
-          roles: [role],
-          syncedAt: new Date(),
-        },
-      });
-    }
 
     res.json({
       id: user.id,
+      name: user.displayName,
       email: user.email,
-      role,
-      rolesSnapshot: snapshot,
+      role: requestedRole,
     });
   } catch (error) {
+    console.error("Update role error:", error);
     res.status(500).json({ error: "Failed to update user role" });
   }
 }
@@ -274,8 +303,19 @@ export async function bootstrapSuperAdmin(req: Request, res: Response) {
           email,
           displayName,
           isActive: true,
+          role: "SUPER_ADMIN",
         },
       });
+    } else {
+      // Ensure existing user has the correct role if bootstrapped
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { role: "SUPER_ADMIN" },
+      });
+    }
+
+    if (!user) {
+      throw new Error("Failed to create or retrieve user during bootstrap");
     }
 
     // Create SUPER_ADMIN role mapping using user's Entra object ID
@@ -423,7 +463,7 @@ export async function logout(req: Request, res: Response) {
     }
 
     const token = authHeader.slice("Bearer ".length).trim();
-    const userId = (req as any).userId;
+    const userId = req.userId;
 
     if (!userId) {
       res.status(400).json({ error: "User not authenticated" });

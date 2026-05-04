@@ -29,6 +29,7 @@ model User {
   displayName    String
   jobTitle       String?
   isActive       Boolean  @default(true)
+  role           AppRole  @default(EMPLOYEE)
   lastGroupSyncAt DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -52,6 +53,7 @@ model User {
   ticketsAssigned ItTicket[] @relation("TicketAssignee")
   financeRequests FinanceRequest[]
   opsActivities   OpsActivity[]
+  attendanceAdjustments AttendanceAdjustment[]
   leaveLedger     LeaveLedgerEntry[]
   ticketComments  ItTicketComment[]   @relation("TicketCommentAuthor")
   blacklistedTokens TokenBlacklist[]
@@ -192,6 +194,7 @@ model WorkflowInstance {
   itTicket         ItTicket?
   financeRequest   FinanceRequest?
   pipelineDeal     PipelineDeal?
+  attendanceAdjustment AttendanceAdjustment?
 
   @@unique([module, entityId])
   @@index([module, currentState, updatedAt])
@@ -361,6 +364,21 @@ model ClockEvent {
   @@index([userId, serverTimestamp(sort: Desc)])
   @@index([branchId, serverTimestamp(sort: Desc)])
   @@index([sessionId, serverTimestamp])
+}
+
+model AttendanceAdjustment {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @db.Uuid
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workDate            DateTime @db.Date
+  reason              String
+  requestedChanges    Json     // e.g. { clockIn: "08:30", clockOut: "17:00" }
+  workflowInstanceId  String   @unique @db.Uuid
+  workflowInstance    WorkflowInstance @relation(fields: [workflowInstanceId], references: [id])
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId, workDate])
 }
 
 // ---------------------------------------------------------------------------

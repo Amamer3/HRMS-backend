@@ -2,7 +2,17 @@ import { Router } from "express";
 import crypto from "crypto";
 import { getMe } from "../../controllers/meController.js";
 import { getAuditLogs } from "../../controllers/auditController.js";
-import { getClockEventsForUser, postClock, postClockSyncBatch } from "../../controllers/attendanceController.js";
+import { 
+  getClockEventsForUser, 
+  postClock, 
+  postClockSyncBatch,
+  getTodayAttendance,
+  checkIn,
+  checkOut,
+  getAttendanceHistory,
+  requestCorrection,
+  getMyCorrections
+} from "../../controllers/attendanceController.js";
 import { listMyLeaves, postLeaveRequest } from "../../controllers/leaveController.js";
 import { getHealth } from "../../controllers/healthController.js";
 import { getSummary, getAttendanceReport, getLeaveReport } from "../../controllers/reportController.js";
@@ -19,12 +29,9 @@ import {
 } from "../../controllers/leaveManagementController.js";
 import {
   getAllAttendance,
-  getTodayAttendance,
   getCorrections,
-  requestCorrection,
-  checkIn,
-  checkOut,
   approveCorrection,
+  rejectCorrection,
 } from "../../controllers/attendanceManagementController.js";
 import {
   getEmployees,
@@ -294,7 +301,7 @@ export function buildV1Router(env: Env): Router {
   // Admin - Users
   r.get(
     "/users",
-    requirePermission(Permission.HR_LEAVE_READ),
+    requirePermission(Permission.HR_ATTENDANCE_READ),
     (req, res, next) => void getUsers(req, res).catch(next),
   );
   r.put(
@@ -346,15 +353,20 @@ export function buildV1Router(env: Env): Router {
   r.put("/leave/:id/submit", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void submitLeave(req, res).catch(next));
 
   // Attendance Management
-  r.get("/attendance", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getAllAttendance(req, res).catch(next));
   r.get("/attendance/today", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getTodayAttendance(req, res).catch(next));
-  r.get("/attendance/corrections", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getCorrections(req, res).catch(next));
+  r.get("/attendance/history", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getAttendanceHistory(req, res).catch(next));
+  r.get("/attendance/corrections/my", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getMyCorrections(req, res).catch(next));
   r.post("/attendance/corrections", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void requestCorrection(req, res).catch(next));
-  r.post("/attendance/checkin", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void checkIn(req, res).catch(next));
-  r.post("/attendance/checkout", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void checkOut(req, res).catch(next));
+  r.post("/attendance/check-in", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void checkIn(req, res).catch(next));
+  r.post("/attendance/check-out", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void checkOut(req, res).catch(next));
+  
+  // Admin Attendance
+  r.get("/attendance/admin/list", requirePermission(Permission.HR_ATTENDANCE_READ), (req, res, next) => void getAllAttendance(req, res).catch(next));
+  r.get("/attendance/corrections", requirePermission(Permission.HR_ATTENDANCE_READ), (req, res, next) => void getCorrections(req, res).catch(next));
   r.put("/attendance/corrections/:id/approve", requirePermission(Permission.HR_ATTENDANCE_WRITE), (req, res, next) => void approveCorrection(req, res).catch(next));
+  r.put("/attendance/corrections/:id/reject", requirePermission(Permission.HR_ATTENDANCE_WRITE), (req, res, next) => void rejectCorrection(req, res).catch(next));
 
-  // Original attendance endpoints
+  // Legacy/Original attendance endpoints
   r.post(
     "/attendance/clock",
     requirePermission(Permission.SELF_ATTENDANCE),
@@ -373,6 +385,7 @@ export function buildV1Router(env: Env): Router {
 
   // Branches
   r.get("/branches", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getBranches(req, res).catch(next));
+  r.get("/branches/list", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getBranches(req, res).catch(next));
   r.post("/branches", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createBranch(req, res).catch(next));
   r.put("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void updateBranch(req, res).catch(next));
   r.delete("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void deleteBranch(req, res).catch(next));
