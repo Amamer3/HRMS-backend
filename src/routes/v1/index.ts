@@ -287,7 +287,7 @@ export function buildV1Router(env: Env): Router {
     }
   });
 
-  r.get("/me", getMe);
+  r.get("/auth/me", getMe);
 
   // Authentication
   r.post("/auth/logout", (req, res, next) => void logout(req, res).catch(next));

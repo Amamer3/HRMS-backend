@@ -9,26 +9,30 @@ import type { Env } from "../config/env.js";
 const jwksClients = new Map<string, any>();
 
 function getJwksClientForIssuer(issuer: string) {
-  if (jwksClients.has(issuer)) {
-    return jwksClients.get(issuer);
+  // Normalize issuer by removing trailing slash
+  const cleanIssuer = issuer.endsWith("/") ? issuer.slice(0, -1) : issuer;
+  
+  if (jwksClients.has(cleanIssuer)) {
+    return jwksClients.get(cleanIssuer);
   }
 
-  // Determine the JWKS URI based on the issuer
-  // Microsoft v1.0 and v2.0 issuers have predictable JWKS locations
-  let jwksUri: string;
-  if (issuer.includes("sts.windows.net")) {
-    // v1.0 issuer -> v1.0 keys
-    jwksUri = issuer.endsWith("/") 
-      ? `${issuer}discovery/keys` 
-      : `${issuer}/discovery/keys`;
-    // Standardize to microsoftonline if needed
-    jwksUri = jwksUri.replace("sts.windows.net", "login.microsoftonline.com");
-  } else {
-    // v2.0 issuer -> v2.0 keys
-    jwksUri = issuer.endsWith("/")
-      ? `${issuer}discovery/v2.0/keys`
-      : `${issuer}/discovery/v2.0/keys`;
+  // Extract tenant ID (the UUID-like part) from the issuer URL
+  const parts = cleanIssuer.split("/");
+  const tenantId = parts.find(p => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p));
+  
+  if (!tenantId) {
+    console.error(`Could not extract tenant ID from issuer: ${issuer}. Falling back to 'common'.`);
   }
+
+  const isV2 = cleanIssuer.includes("/v2.0");
+  const targetTenant = tenantId || "common";
+  
+  // Microsoft v1.0 and v2.0 have different discovery paths
+  const jwksUri = isV2 
+    ? `https://login.microsoftonline.com/${targetTenant}/discovery/v2.0/keys`
+    : `https://login.microsoftonline.com/${targetTenant}/discovery/keys`;
+
+  console.log(`Creating JWKS client for issuer: ${cleanIssuer} -> jwksUri: ${jwksUri}`);
 
   const client = jwksClient({
     jwksUri,
@@ -36,7 +40,7 @@ function getJwksClientForIssuer(issuer: string) {
     rateLimit: true,
   });
 
-  jwksClients.set(issuer, client);
+  jwksClients.set(cleanIssuer, client);
   return client;
 }
 
