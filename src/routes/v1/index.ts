@@ -80,6 +80,10 @@ import {
   markAsRead,
   markAllAsRead,
 } from "../../controllers/notificationsController.js";
+import {
+  getLatestAnnouncements,
+  createAnnouncement,
+} from "../../controllers/announcementsController.js";
 import { Permission } from "../../config/permissions.js";
 import { requirePermission } from "../../middleware/requireRole.js";
 import { requireHrSensitiveAttendance } from "../../middleware/requireRole.js";
@@ -384,8 +388,8 @@ export function buildV1Router(env: Env): Router {
   );
 
   // Branches
-  r.get("/branches", requirePermission(Permission.HR_LEAVE_READ), getBranches);
-  r.get("/branches/list", requirePermission(Permission.HR_LEAVE_READ), getBranches);
+  r.get("/branches", requirePermission(Permission.BRANCH_READ), getBranches);
+  r.get("/branches/list", requirePermission(Permission.BRANCH_READ), getBranches);
   r.post("/branches", requirePermission(Permission.HR_LEAVE_WRITE), createBranch);
   r.put("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), updateBranch);
   r.delete("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), deleteBranch);
@@ -436,6 +440,10 @@ export function buildV1Router(env: Env): Router {
   r.get("/notifications", requirePermission(Permission.SELF_PROFILE), getNotifications);
   r.put("/notifications/:id/read", requirePermission(Permission.SELF_PROFILE), markAsRead);
   r.put("/notifications/read-all", requirePermission(Permission.SELF_PROFILE), markAllAsRead);
+
+  // Announcements
+  r.get("/announcements/latest", getLatestAnnouncements); // Publicly accessible for now
+  r.post("/announcements", requirePermission(Permission.SYSTEM_CONFIG), createAnnouncement);
 
   return r;
 }

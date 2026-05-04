@@ -57,6 +57,7 @@ model User {
   leaveLedger     LeaveLedgerEntry[]
   ticketComments  ItTicketComment[]   @relation("TicketCommentAuthor")
   blacklistedTokens TokenBlacklist[]
+  announcements   Announcement[] @relation("AnnouncementAuthor")
 
   @@index([entraObjectId])
   @@index([email])
@@ -560,6 +561,24 @@ model InAppNotification {
   createdAt   DateTime @default(now())
 
   @@index([userId, readAt, createdAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------
+// Announcements & Company News
+// ---------------------------------------------------------------------------
+
+model Announcement {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String
+  content   String
+  authorId  String?  @db.Uuid
+  author    User?    @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  isPublic  Boolean  @default(true)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt(sort: Desc)])
 }
 
 // ---------------------------------------------------------------------------

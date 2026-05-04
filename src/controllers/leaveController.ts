@@ -12,7 +12,7 @@ const createLeave = z.object({
   leaveTypeId: z.string().uuid(),
   startDate: z.string(),
   endDate: z.string(),
-  workingDays: z.number().positive(),
+  workingDays: z.coerce.number().positive(),
   reason: z.string().optional(),
 });
 

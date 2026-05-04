@@ -9,6 +9,7 @@ export const Permission = {
   SYSTEM_CONFIG: "system.config",
   AUDIT_READ: "audit.read",
   USER_SYNC: "user.sync",
+  BRANCH_READ: "branch.read",
 
   // HR
   HR_LEAVE_READ: "hr.leave.read",
@@ -53,6 +54,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
   SUPER_ADMIN: Object.values(Permission),
   HR_ADMIN: [
     Permission.AUDIT_READ,
+    Permission.BRANCH_READ,
     Permission.HR_LEAVE_READ,
     Permission.HR_LEAVE_WRITE,
     Permission.HR_LEAVE_APPROVE,
@@ -66,6 +68,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
     Permission.NOTIFICATION_CONFIG,
   ],
   MANAGER: [
+    Permission.BRANCH_READ,
     Permission.HR_LEAVE_READ,
     Permission.HR_LEAVE_APPROVE,
     Permission.SELF_PROFILE,
@@ -77,6 +80,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
     Permission.REPORTING_READ,
   ],
   EMPLOYEE: [
+    Permission.BRANCH_READ,
     Permission.SELF_PROFILE,
     Permission.SELF_LEAVE,
     Permission.SELF_ATTENDANCE,
@@ -85,6 +89,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
     Permission.OPS_READ,
   ],
   READ_ONLY: [
+    Permission.BRANCH_READ,
     Permission.SELF_PROFILE, 
     Permission.HR_LEAVE_READ,
     Permission.IT_TICKET_READ_ALL,

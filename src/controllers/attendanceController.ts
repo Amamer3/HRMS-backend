@@ -8,15 +8,15 @@ import { BadRequestError, UnauthorizedError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 
 const clockBody = z.object({
-  branchId: z.string().uuid().optional(),
-  branch_id: z.string().uuid().optional(), // Map from frontend
+  branchId: z.string().uuid().optional().nullable(),
+  branch_id: z.string().uuid().optional().nullable(), // Map from frontend
   type: z.enum(["CLOCK_IN", "CLOCK_OUT"]),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
-  lat: z.number().optional(), // Map from frontend
-  lng: z.number().optional(), // Map from frontend
-  accuracyM: z.number().optional().nullable(),
-  accuracy: z.number().optional().nullable(), // Map from frontend
+  latitude: z.coerce.number().optional(),
+  longitude: z.coerce.number().optional(),
+  lat: z.coerce.number().optional(), // Map from frontend
+  lng: z.coerce.number().optional(), // Map from frontend
+  accuracyM: z.coerce.number().optional().nullable(),
+  accuracy: z.coerce.number().optional().nullable(), // Map from frontend
   clientTimestamp: z.string().datetime().optional(),
   idempotencyKey: z.string().uuid().optional().nullable(),
   source: z.enum(["ONLINE", "OFFLINE_SYNC"]).default("ONLINE"),
