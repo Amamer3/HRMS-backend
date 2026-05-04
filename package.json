@@ -16,9 +16,6 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "prisma db seed"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "dependencies": {
     "@prisma/client": "^6.6.0",
     "@scalar/express-api-reference": "^0.9.13",

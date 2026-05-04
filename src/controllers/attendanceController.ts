@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AttendanceSyncService } from "../services/attendanceSyncService.js";
 import { appendAuditLog } from "../middleware/auditMiddleware.js";
-import { BadRequestError, NotFoundError, UnauthorizedError } from "../lib/errors.js";
+import { BadRequestError, UnauthorizedError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 
 const clockBody = z.object({
@@ -29,59 +29,11 @@ const correctionBody = z.object({
   reason: z.string(),
 });
 
-export const getTodayAttendance = asyncHandler(async (req: Request, res: Response) => {
-  if (!req.userId) {
-    throw new UnauthorizedError("User not provisioned");
-  }
-
-  const today = new Date();
-  const workDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-
-  const session = await prisma.attendanceSession.findUnique({
-    where: { userId_workDate: { userId: req.userId, workDate } },
-    include: {
-      events: { orderBy: { clientTimestamp: "asc" } },
-      branch: true,
-    },
-  });
-
-  if (!session) {
-    res.json(null);
-    return;
-  }
-
-  // Calculate total hours if closed
-  let totalHours = 0;
-  const clockIn = session.events.find(e => e.type === "CLOCK_IN" && e.accepted);
-  const clockOut = session.events.find(e => e.type === "CLOCK_OUT" && e.accepted);
-
-  if (clockIn && clockOut) {
-    totalHours = (clockOut.clientTimestamp.getTime() - clockIn.clientTimestamp.getTime()) / (1000 * 60 * 60);
-  }
-
-  // Check if late (after 9:00 AM)
-  const isLate = clockIn ? (clockIn.clientTimestamp.getUTCHours() > 9 || (clockIn.clientTimestamp.getUTCHours() === 9 && clockIn.clientTimestamp.getUTCMinutes() > 0)) : false;
-
-  res.json({
-    ...session,
-    totalHours: totalHours.toFixed(2),
-    isLate,
-    clockIn: clockIn?.clientTimestamp,
-    clockOut: clockOut?.clientTimestamp,
-  });
-});
-
-export const checkIn = asyncHandler(async (req: Request, res: Response) => {
-  req.body.type = "CLOCK_IN";
-  return postClock(req, res);
-});
-
-export const checkOut = asyncHandler(async (req: Request, res: Response) => {
-  req.body.type = "CLOCK_OUT";
-  return postClock(req, res);
-});
-
-export const postClock = asyncHandler(async (req: Request, res: Response) => {
+/**
+ * Shared logic for clocking in/out.
+ */
+async function handleClock(req: Request, res: Response, type: "CLOCK_IN" | "CLOCK_OUT") {
+  req.body.type = type;
   const body = clockBody.parse(req.body);
   if (!req.userId) {
     throw new UnauthorizedError("User not provisioned");
@@ -137,6 +89,60 @@ export const postClock = asyncHandler(async (req: Request, res: Response) => {
   });
 
   res.status(result.status === "created" ? 201 : 200).json(result);
+}
+
+export const getTodayAttendance = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.userId) {
+    throw new UnauthorizedError("User not provisioned");
+  }
+
+  const today = new Date();
+  const workDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  const session = await prisma.attendanceSession.findUnique({
+    where: { userId_workDate: { userId: req.userId, workDate } },
+    include: {
+      events: { orderBy: { clientTimestamp: "asc" } },
+      branch: true,
+    },
+  });
+
+  if (!session) {
+    res.json(null);
+    return;
+  }
+
+  // Calculate total hours if closed
+  let totalHours = 0;
+  const clockIn = session.events.find(e => e.type === "CLOCK_IN" && e.accepted);
+  const clockOut = session.events.find(e => e.type === "CLOCK_OUT" && e.accepted);
+
+  if (clockIn && clockOut) {
+    totalHours = (clockOut.clientTimestamp.getTime() - clockIn.clientTimestamp.getTime()) / (1000 * 60 * 60);
+  }
+
+  // Check if late (after 9:00 AM)
+  const isLate = clockIn ? (clockIn.clientTimestamp.getUTCHours() > 9 || (clockIn.clientTimestamp.getUTCHours() === 9 && clockIn.clientTimestamp.getUTCMinutes() > 0)) : false;
+
+  res.json({
+    ...session,
+    totalHours: totalHours.toFixed(2),
+    isLate,
+    clockIn: clockIn?.clientTimestamp,
+    clockOut: clockOut?.clientTimestamp,
+  });
+});
+
+export const checkIn = asyncHandler(async (req: Request, res: Response) => {
+  return handleClock(req, res, "CLOCK_IN");
+});
+
+export const checkOut = asyncHandler(async (req: Request, res: Response) => {
+  return handleClock(req, res, "CLOCK_OUT");
+});
+
+export const postClock = asyncHandler(async (req: Request, res: Response) => {
+  return handleClock(req, res, req.body.type);
 });
 
 export const getAttendanceHistory = asyncHandler(async (req: Request, res: Response) => {
