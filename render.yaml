@@ -1,7 +1,7 @@
 services:
   - type: web
     name: echt-hr-api
-    runtime: node
+    runtime: docker
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run prisma:migrate:deploy && npm run start
