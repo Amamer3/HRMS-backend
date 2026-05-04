@@ -85,42 +85,15 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
       ...(status === "active" && { isActive: true }),
       ...(status === "inactive" && { isActive: false }),
     },
-    select: {
-      id: true,
-      email: true,
-      displayName: true,
-      jobTitle: true,
-      isActive: true,
-      role: true,
-      entraObjectId: true,
-      departmentId: true,
-      department: {
-        select: {
-          id: true,
-          name: true,
-          code: true,
-        },
-      },
-      primaryBranchId: true,
-      primaryBranch: {
-        select: {
-          id: true,
-          name: true,
-          code: true,
-        },
-      },
+    include: {
+      department: true,
+      primaryBranch: true,
       rolesResolved: {
-        select: {
-          roles: true,
-          syncedAt: true,
-        },
         orderBy: {
           syncedAt: "desc",
         },
         take: 1,
       },
-      createdAt: true,
-      updatedAt: true,
     },
     orderBy: { createdAt: "desc" },
   });

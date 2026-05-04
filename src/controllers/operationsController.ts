@@ -1,51 +1,70 @@
 import { Request, Response } from "express";
-import { randomUUID } from "node:crypto";
+import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
-import { NotFoundError } from "../lib/errors.js";
-
-const clients = new Map<string, any>();
-const conversations = new Map<string, any>();
 
 export const getClients = asyncHandler(async (_req: Request, res: Response) => {
-  res.json(Array.from(clients.values()));
+  const allClients = await prisma.clientAccount.findMany({
+    include: {
+      pipelineDeals: true,
+      conversations: true,
+    },
+    orderBy: { name: "asc" },
+  });
+  res.json(allClients);
 });
 
 export const createClient = asyncHandler(async (req: Request, res: Response) => {
-  const id = randomUUID();
-  const client = { id, ...req.body, status: "ACTIVE", createdAt: new Date() };
-  clients.set(id, client);
+  const { name, code } = req.body;
+  const client = await prisma.clientAccount.create({
+    data: {
+      name,
+      code,
+    },
+  });
   res.status(201).json(client);
 });
 
 export const updateClient = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
-  const client = clients.get(id);
-  if (!client) {
-    throw new NotFoundError("Client not found");
-  }
-  Object.assign(client, req.body);
+  const client = await prisma.clientAccount.update({
+    where: { id },
+    data: req.body,
+  });
   res.json(client);
 });
 
 export const deleteClient = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
-  if (!clients.has(id)) {
-    throw new NotFoundError("Client not found");
-  }
-  clients.delete(id);
+  await prisma.clientAccount.delete({
+    where: { id },
+  });
   res.status(204).send();
 });
 
 export const getConversations = asyncHandler(async (req: Request, res: Response) => {
   const { client_id } = req.query;
-  let all = Array.from(conversations.values());
-  if (client_id) all = all.filter(c => c.clientId === (Array.isArray(client_id) ? client_id[0] : client_id));
-  res.json(all);
+  const allConversations = await prisma.clientConversation.findMany({
+    where: {
+      ...(client_id && { clientId: client_id as string }),
+    },
+    include: {
+      client: true,
+    },
+    orderBy: { occurredAt: "desc" },
+  });
+  res.json(allConversations);
 });
 
 export const createConversation = asyncHandler(async (req: Request, res: Response) => {
-  const id = randomUUID();
-  const conversation = { id, ...req.body, status: "OPEN", createdAt: new Date() };
-  conversations.set(id, conversation);
+  const { clientId, channel, summary, occurredAt, ownerId } = req.body;
+  const conversation = await prisma.clientConversation.create({
+    data: {
+      clientId,
+      channel,
+      summary,
+      occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
+      ownerId: ownerId || req.userId,
+    },
+  });
   res.status(201).json(conversation);
 });

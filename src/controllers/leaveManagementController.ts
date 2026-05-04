@@ -16,23 +16,16 @@ export const getAllLeaves = asyncHandler(async (req: Request, res: Response) => 
       ...(leaveTypeId && { leaveTypeId: leaveTypeId as string }),
       ...(status && {
         workflowInstance: {
-          currentState: status as any,
+          currentState: String(status).toUpperCase() as any,
         },
       }),
     },
     include: {
-      user: {
-        select: {
-          id: true,
-          displayName: true,
-          email: true,
-        },
-      },
+      user: true,
       leaveType: true,
       workflowInstance: true,
     },
     orderBy: { createdAt: "desc" },
-    take: 100,
   });
 
   res.json({ items });
@@ -49,12 +42,7 @@ export const getPendingDashboard = asyncHandler(async (_req: Request, res: Respo
       },
     },
     include: {
-      user: {
-        select: {
-          id: true,
-          displayName: true,
-        },
-      },
+      user: true,
       leaveType: true,
       workflowInstance: true,
     },

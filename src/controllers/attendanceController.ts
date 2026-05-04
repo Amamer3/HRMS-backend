@@ -153,7 +153,6 @@ export const getAttendanceHistory = asyncHandler(async (req: Request, res: Respo
   const history = await prisma.attendanceSession.findMany({
     where: { userId: req.userId },
     orderBy: { workDate: "desc" },
-    take: 30,
     include: {
       events: { orderBy: { clientTimestamp: "asc" } },
       branch: true,
@@ -176,6 +175,7 @@ export const getAttendanceHistory = asyncHandler(async (req: Request, res: Respo
       totalHours: totalHours.toFixed(2),
       isLate,
       status: session.status,
+      session: session, // Include full session data
     };
   });
 
@@ -239,6 +239,7 @@ export const getMyCorrections = asyncHandler(async (req: Request, res: Response)
     reason: c.reason,
     status: c.workflowInstance.currentState,
     createdAt: c.createdAt,
+    adjustment: c, // Include full adjustment data
   }));
 
   res.json(formatted);
@@ -290,25 +291,9 @@ export const postClockSyncBatch = asyncHandler(async (req: Request, res: Respons
 
 export const getClockEventsForUser = asyncHandler(async (req: Request, res: Response) => {
   const userId = String(req.params.userId);
-  const take = req.query.take ? Number(req.query.take) : 50;
   const items = await prisma.clockEvent.findMany({
     where: { userId },
     orderBy: { serverTimestamp: "desc" },
-    take,
-    select: {
-      id: true,
-      type: true,
-      latitude: true,
-      longitude: true,
-      accuracyM: true,
-      haversineDistanceM: true,
-      accepted: true,
-      rejectionReason: true,
-      source: true,
-      clientTimestamp: true,
-      serverTimestamp: true,
-      branchId: true,
-    },
   });
   res.json({ items });
 });

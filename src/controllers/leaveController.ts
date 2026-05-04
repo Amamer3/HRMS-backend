@@ -88,7 +88,6 @@ export const listMyLeaves = asyncHandler(async (req: Request, res: Response) => 
     where: { userId: req.userId },
     include: { leaveType: true, workflowInstance: true },
     orderBy: { createdAt: "desc" },
-    take: 50,
   });
   res.json({ items });
 });
