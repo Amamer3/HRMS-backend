@@ -13,7 +13,11 @@ import {
   requestCorrection,
   getMyCorrections
 } from "../../controllers/attendanceController.js";
-import { listMyLeaves, postLeaveRequest } from "../../controllers/leaveController.js";
+import { 
+  listMyLeaves, 
+  postLeaveRequest,
+  getMyLeaveBalances,
+} from "../../controllers/leaveController.js";
 import { getHealth } from "../../controllers/healthController.js";
 import { getSummary, getAttendanceReport, getLeaveReport } from "../../controllers/reportController.js";
 import { 
@@ -80,10 +84,6 @@ import {
   markAsRead,
   markAllAsRead,
 } from "../../controllers/notificationsController.js";
-import {
-  getLatestAnnouncements,
-  createAnnouncement,
-} from "../../controllers/announcementsController.js";
 import { Permission } from "../../config/permissions.js";
 import { requirePermission } from "../../middleware/requireRole.js";
 import { requireHrSensitiveAttendance } from "../../middleware/requireRole.js";
@@ -346,7 +346,8 @@ export function buildV1Router(env: Env): Router {
   r.get("/reports/leave", requirePermission(Permission.REPORTING_READ), getLeaveReport);
 
   // Leave Management
-  r.get("/leave", requirePermission(Permission.SELF_LEAVE), getAllLeaves);
+  r.get("/leave", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
+  r.get("/leave/admin/all", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
   r.post("/leave", requirePermission(Permission.SELF_LEAVE), createLeave);
   r.get("/leave/pending-dashboard", requirePermission(Permission.HR_LEAVE_APPROVE), getPendingDashboard);
   r.put("/leave/:id", requirePermission(Permission.SELF_LEAVE), updateLeave);
@@ -412,6 +413,11 @@ export function buildV1Router(env: Env): Router {
     requirePermission(Permission.SELF_LEAVE),
     listMyLeaves,
   );
+  r.get(
+    "/leave/balance",
+    requirePermission(Permission.SELF_LEAVE),
+    getMyLeaveBalances,
+  );
 
   // Finance
   r.get("/finance/requests", requirePermission(Permission.FINANCE_READ), getFinanceRequests);
@@ -440,10 +446,6 @@ export function buildV1Router(env: Env): Router {
   r.get("/notifications", requirePermission(Permission.SELF_PROFILE), getNotifications);
   r.put("/notifications/:id/read", requirePermission(Permission.SELF_PROFILE), markAsRead);
   r.put("/notifications/read-all", requirePermission(Permission.SELF_PROFILE), markAllAsRead);
-
-  // Announcements
-  r.get("/announcements/latest", getLatestAnnouncements); // Publicly accessible for now
-  r.post("/announcements", requirePermission(Permission.SYSTEM_CONFIG), createAnnouncement);
 
   return r;
 }

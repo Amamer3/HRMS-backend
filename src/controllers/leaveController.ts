@@ -92,3 +92,32 @@ export const listMyLeaves = asyncHandler(async (req: Request, res: Response) => 
   });
   res.json({ items });
 });
+
+/**
+ * Get the current user's leave balances for a specific year.
+ */
+export const getMyLeaveBalances = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.userId) {
+    throw new UnauthorizedError("User not provisioned");
+  }
+
+  const year = Number(req.query.year) || new Date().getUTCFullYear();
+
+  const balances = await prisma.leaveBalance.findMany({
+    where: {
+      userId: req.userId,
+      year: year
+    },
+    include: {
+      leaveType: {
+        select: {
+          id: true,
+          name: true,
+          code: true
+        }
+      }
+    }
+  });
+
+  res.json({ items: balances });
+});

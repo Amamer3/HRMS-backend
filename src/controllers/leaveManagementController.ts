@@ -1,122 +1,163 @@
 import { Request, Response } from "express";
-import { randomUUID } from "node:crypto";
+import { prisma } from "../lib/prisma.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
+import { WorkflowEngine } from "../services/workflowEngine.js";
+import { NotFoundError } from "../lib/errors.js";
 
-// Mock data store
-const leaveRequests = new Map<string, any>();
+/**
+ * Admin: Get all leave requests with filters.
+ */
+export const getAllLeaves = asyncHandler(async (req: Request, res: Response) => {
+  const { employeeId, status, leaveTypeId } = req.query;
 
-export async function getAllLeaves(req: Request, res: Response) {
-  const { employee_id, status } = req.query;
-  const leaves = Array.from(leaveRequests.values());
-  
-  let filtered = leaves;
-  if (employee_id) {
-    filtered = filtered.filter(l => l.employeeId === employee_id);
-  } 
-  if (status) {
-    filtered = filtered.filter(l => l.status === status);
-  }
-  
-  res.json(filtered);
-}
+  const items = await prisma.leaveRequest.findMany({
+    where: {
+      ...(employeeId && { userId: employeeId as string }),
+      ...(leaveTypeId && { leaveTypeId: leaveTypeId as string }),
+      ...(status && {
+        workflowInstance: {
+          currentState: status as any,
+        },
+      }),
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          displayName: true,
+          email: true,
+        },
+      },
+      leaveType: true,
+      workflowInstance: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
 
-export async function getPendingDashboard(_req: Request, res: Response) {
-  const leaves = Array.from(leaveRequests.values());
-  const pending = leaves.filter(l => l.status === "PENDING");
-  res.json(pending);
-}
+  res.json({ items });
+});
 
-export async function createLeave(req: Request, res: Response) {
-  const { leaveTypeId, startDate, endDate, workingDays, reason } = req.body;
-  const id = randomUUID();
-  
-  const leave = {
-    id,
-    employeeId: (req as any).user?.id,
-    leaveTypeId,
-    startDate,
-    endDate,
-    workingDays,
-    reason,
-    status: "PENDING",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-  
-  leaveRequests.set(id, leave);
-  res.status(201).json({ leave, workflowId: randomUUID() });
-}
+/**
+ * Admin: Get pending leaves for dashboard.
+ */
+export const getPendingDashboard = asyncHandler(async (_req: Request, res: Response) => {
+  const items = await prisma.leaveRequest.findMany({
+    where: {
+      workflowInstance: {
+        currentState: "PENDING_APPROVAL",
+      },
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          displayName: true,
+        },
+      },
+      leaveType: true,
+      workflowInstance: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
-export async function updateLeave(req: Request, res: Response) {
+  res.json({ items });
+});
+
+/**
+ * Admin/Manager: Approve a leave request.
+ */
+export const approveLEave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const leave = leaveRequests.get(id);
-  
-  if (!leave) {
-    res.status(404).json({ error: "Leave not found" });
-    return;
-  }
-  
-  Object.assign(leave, req.body, { updatedAt: new Date() });
-  res.json(leave);
-}
+  const leave = await prisma.leaveRequest.findUnique({
+    where: { id },
+    include: { workflowInstance: true },
+  });
 
-export async function deleteLeave(req: Request, res: Response) {
-  const id = req.params.id as string;
-  leaveRequests.delete(id);
+  if (!leave) throw new NotFoundError("Leave request not found");
+
+  const engine = new WorkflowEngine(prisma);
+  await engine.transition(req, {
+    workflowId: leave.workflowInstanceId,
+    to: "COMPLETED",
+    comment: req.body.comment || "Approved by admin",
+  });
+
+  res.json({ message: "Leave approved" });
+});
+
+/**
+ * Admin/Manager: Reject a leave request.
+ */
+export const rejectLeave = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const leave = await prisma.leaveRequest.findUnique({
+    where: { id },
+    include: { workflowInstance: true },
+  });
+
+  if (!leave) throw new NotFoundError("Leave request not found");
+
+  const engine = new WorkflowEngine(prisma);
+  await engine.transition(req, {
+    workflowId: leave.workflowInstanceId,
+    to: "REJECTED",
+    comment: req.body.comment || "Rejected by admin",
+  });
+
+  res.json({ message: "Leave rejected" });
+});
+
+/**
+ * Admin/Manager: Return a leave request for clarification.
+ */
+export const returnLeave = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const leave = await prisma.leaveRequest.findUnique({
+    where: { id },
+    include: { workflowInstance: true },
+  });
+
+  if (!leave) throw new NotFoundError("Leave request not found");
+
+  const engine = new WorkflowEngine(prisma);
+  await engine.transition(req, {
+    workflowId: leave.workflowInstanceId,
+    to: "RETURNED",
+    comment: req.body.comment || "Returned for clarification",
+  });
+
+  res.json({ message: "Leave returned" });
+});
+
+export const createLeave = asyncHandler(async (_req: Request, res: Response) => {
+  res.status(501).json({ error: "Use /hr/leave for creation" });
+});
+
+export const updateLeave = asyncHandler(async (_req: Request, res: Response) => {
+  res.status(501).json({ error: "Not implemented" });
+});
+
+export const deleteLeave = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  await prisma.leaveRequest.delete({ where: { id } });
   res.status(204).send();
-}
+});
 
-export async function approveLEave(req: Request, res: Response) {
-  const id = req.params.id as string;
-  const leave = leaveRequests.get(id);
-  
-  if (!leave) {
-    res.status(404).json({ error: "Leave not found" });
-    return;
-  }
-  
-  leave.status = "APPROVED";
-  leave.updatedAt = new Date();
-  res.json(leave);
-}
+export const submitLeave = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const leave = await prisma.leaveRequest.findUnique({
+    where: { id },
+    include: { workflowInstance: true },
+  });
 
-export async function rejectLeave(req: Request, res: Response) {
-  const id = req.params.id as string;
-  const leave = leaveRequests.get(id);
-  
-  if (!leave) {
-    res.status(404).json({ error: "Leave not found" });
-    return;
-  }
-  
-  leave.status = "REJECTED";
-  leave.updatedAt = new Date();
-  res.json(leave);
-}
+  if (!leave) throw new NotFoundError("Leave request not found");
 
-export async function returnLeave(req: Request, res: Response) {
-  const id = req.params.id as string;
-  const leave = leaveRequests.get(id);
-  
-  if (!leave) {
-    res.status(404).json({ error: "Leave not found" });
-    return;
-  }
-  
-  leave.status = "RETURNED";
-  leave.updatedAt = new Date();
-  res.json(leave);
-}
+  const engine = new WorkflowEngine(prisma);
+  await engine.transition(req, {
+    workflowId: leave.workflowInstanceId,
+    to: "SUBMITTED",
+  });
 
-export async function submitLeave(req: Request, res: Response) {
-  const id = req.params.id as string;
-  const leave = leaveRequests.get(id);
-  
-  if (!leave) {
-    res.status(404).json({ error: "Leave not found" });
-    return;
-  }
-  
-  leave.status = "SUBMITTED";
-  leave.updatedAt = new Date();
-  res.json(leave);
-}
+  res.json({ message: "Leave submitted" });
+});
