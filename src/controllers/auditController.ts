@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import { AuditQueryService } from "../services/auditQueryService.js";
 import { prisma } from "../lib/prisma.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 const auditQuery = new AuditQueryService(prisma);
 
-export async function getAuditLogs(req: Request, res: Response) {
+export const getAuditLogs = asyncHandler(async (req: Request, res: Response) => {
   const result = await auditQuery.search({
     resourceType: req.query.resourceType as string | undefined,
     resourceId: req.query.resourceId as string | undefined,
@@ -16,4 +17,4 @@ export async function getAuditLogs(req: Request, res: Response) {
     skip: req.query.skip ? Number(req.query.skip) : undefined,
   });
   res.json(result);
-}
+});

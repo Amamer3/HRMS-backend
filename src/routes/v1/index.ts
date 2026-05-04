@@ -128,7 +128,7 @@ export function buildV1Router(env: Env): Router {
    // BOOTSTRAP & ADMIN - Role Management
    // ============================================================
    // Bootstrap endpoint (public) - only works if no SUPER_ADMIN exists
-   r.post("/admin/bootstrap", (req, res, next) => void bootstrapSuperAdmin(req, res).catch(next));
+   r.post("/admin/bootstrap", bootstrapSuperAdmin);
  
    // Public authentication endpoints (no auth required)
    r.get("/auth/azure/login", (req, res) => {
@@ -279,7 +279,7 @@ export function buildV1Router(env: Env): Router {
   r.get("/auth/me", getMe);
 
   // Authentication
-  r.post("/auth/logout", (req, res, next) => void logout(req, res).catch(next));
+  r.post("/auth/logout", logout);
   r.post("/auth/refresh", requirePermission(Permission.SELF_PROFILE), (_req, res) => {
     // For now, just validate the current token - refresh tokens are handled by Azure AD
     res.json({ message: "Token is valid", valid: true });
@@ -288,154 +288,154 @@ export function buildV1Router(env: Env): Router {
   r.get(
     "/audit/logs",
     requirePermission(Permission.AUDIT_READ),
-    (req, res, next) => void getAuditLogs(req, res).catch(next),
+    getAuditLogs,
   );
 
   // Audit Log endpoint with limit parameter
   r.get(
     "/audit-log",
     requirePermission(Permission.AUDIT_READ),
-    (req, res, next) => void getAuditLogs(req, res).catch(next),
+    getAuditLogs,
   );
 
   // Admin - Users
   r.get(
     "/users",
     requirePermission(Permission.HR_ATTENDANCE_READ),
-    (req, res, next) => void getUsers(req, res).catch(next),
+    getUsers,
   );
   r.put(
     "/users/:userId/role",
     requirePermission(Permission.SYSTEM_CONFIG),
-    (req, res, next) => void updateUserRole(req, res).catch(next),
+    updateUserRole,
   );
 
   // Admin - Role Mappings (Entra Groups to Roles)
   r.get(
     "/admin/role-mappings",
     requirePermission(Permission.SYSTEM_CONFIG),
-    (req, res, next) => void getEntraGroupRoleMappings(req, res).catch(next),
+    getEntraGroupRoleMappings,
   );
   r.post(
     "/admin/role-mappings",
     requirePermission(Permission.SYSTEM_CONFIG),
-    (req, res, next) => void createOrUpdateEntraGroupRoleMapping(req, res).catch(next),
+    createOrUpdateEntraGroupRoleMapping,
   );
   r.delete(
     "/admin/role-mappings/:entraGroupId",
     requirePermission(Permission.SYSTEM_CONFIG),
-    (req, res, next) => void deleteEntraGroupRoleMapping(req, res).catch(next),
+    deleteEntraGroupRoleMapping,
   );
 
   // Admin - Token Management
   r.post(
     "/admin/cleanup-tokens",
     requirePermission(Permission.SYSTEM_CONFIG),
-    (req, res, next) => void cleanupExpiredTokens(req, res).catch(next),
+    cleanupExpiredTokens,
   );
 
 
 
   // Reports
-  r.get("/reports/summary", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getSummary(req, res).catch(next));
-  r.get("/reports/attendance", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getAttendanceReport(req, res).catch(next));
-  r.get("/reports/leave", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getLeaveReport(req, res).catch(next));
+  r.get("/reports/summary", requirePermission(Permission.REPORTING_READ), getSummary);
+  r.get("/reports/attendance", requirePermission(Permission.REPORTING_READ), getAttendanceReport);
+  r.get("/reports/leave", requirePermission(Permission.REPORTING_READ), getLeaveReport);
 
   // Leave Management
-  r.get("/leave", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void getAllLeaves(req, res).catch(next));
-  r.post("/leave", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void createLeave(req, res).catch(next));
-  r.get("/leave/pending-dashboard", requirePermission(Permission.HR_LEAVE_APPROVE), (req, res, next) => void getPendingDashboard(req, res).catch(next));
-  r.put("/leave/:id", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void updateLeave(req, res).catch(next));
-  r.delete("/leave/:id", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void deleteLeave(req, res).catch(next));
-  r.put("/leave/:id/approve", requirePermission(Permission.HR_LEAVE_APPROVE), (req, res, next) => void approveLEave(req, res).catch(next));
-  r.put("/leave/:id/reject", requirePermission(Permission.HR_LEAVE_APPROVE), (req, res, next) => void rejectLeave(req, res).catch(next));
-  r.put("/leave/:id/return", requirePermission(Permission.HR_LEAVE_APPROVE), (req, res, next) => void returnLeave(req, res).catch(next));
-  r.put("/leave/:id/submit", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void submitLeave(req, res).catch(next));
+  r.get("/leave", requirePermission(Permission.SELF_LEAVE), getAllLeaves);
+  r.post("/leave", requirePermission(Permission.SELF_LEAVE), createLeave);
+  r.get("/leave/pending-dashboard", requirePermission(Permission.HR_LEAVE_APPROVE), getPendingDashboard);
+  r.put("/leave/:id", requirePermission(Permission.SELF_LEAVE), updateLeave);
+  r.delete("/leave/:id", requirePermission(Permission.SELF_LEAVE), deleteLeave);
+  r.put("/leave/:id/approve", requirePermission(Permission.HR_LEAVE_APPROVE), approveLEave);
+  r.put("/leave/:id/reject", requirePermission(Permission.HR_LEAVE_APPROVE), rejectLeave);
+  r.put("/leave/:id/return", requirePermission(Permission.HR_LEAVE_APPROVE), returnLeave);
+  r.put("/leave/:id/submit", requirePermission(Permission.SELF_LEAVE), submitLeave);
 
   // Attendance Management
-  r.get("/attendance/today", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getTodayAttendance(req, res).catch(next));
-  r.get("/attendance/history", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getAttendanceHistory(req, res).catch(next));
-  r.get("/attendance/corrections/my", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void getMyCorrections(req, res).catch(next));
-  r.post("/attendance/corrections", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void requestCorrection(req, res).catch(next));
-  r.post("/attendance/check-in", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void checkIn(req, res).catch(next));
-  r.post("/attendance/check-out", requirePermission(Permission.SELF_ATTENDANCE), (req, res, next) => void checkOut(req, res).catch(next));
+  r.get("/attendance/today", requirePermission(Permission.SELF_ATTENDANCE), getTodayAttendance);
+  r.get("/attendance/history", requirePermission(Permission.SELF_ATTENDANCE), getAttendanceHistory);
+  r.get("/attendance/corrections/my", requirePermission(Permission.SELF_ATTENDANCE), getMyCorrections);
+  r.post("/attendance/corrections", requirePermission(Permission.SELF_ATTENDANCE), requestCorrection);
+  r.post("/attendance/check-in", requirePermission(Permission.SELF_ATTENDANCE), checkIn);
+  r.post("/attendance/check-out", requirePermission(Permission.SELF_ATTENDANCE), checkOut);
   
   // Admin Attendance
-  r.get("/attendance/admin/list", requirePermission(Permission.HR_ATTENDANCE_READ), (req, res, next) => void getAllAttendance(req, res).catch(next));
-  r.get("/attendance/corrections", requirePermission(Permission.HR_ATTENDANCE_READ), (req, res, next) => void getCorrections(req, res).catch(next));
-  r.put("/attendance/corrections/:id/approve", requirePermission(Permission.HR_ATTENDANCE_WRITE), (req, res, next) => void approveCorrection(req, res).catch(next));
-  r.put("/attendance/corrections/:id/reject", requirePermission(Permission.HR_ATTENDANCE_WRITE), (req, res, next) => void rejectCorrection(req, res).catch(next));
+  r.get("/attendance/admin/list", requirePermission(Permission.HR_ATTENDANCE_READ), getAllAttendance);
+  r.get("/attendance/corrections", requirePermission(Permission.HR_ATTENDANCE_READ), getCorrections);
+  r.put("/attendance/corrections/:id/approve", requirePermission(Permission.HR_ATTENDANCE_WRITE), approveCorrection);
+  r.put("/attendance/corrections/:id/reject", requirePermission(Permission.HR_ATTENDANCE_WRITE), rejectCorrection);
 
   // Legacy/Original attendance endpoints
   r.post(
     "/attendance/clock",
     requirePermission(Permission.SELF_ATTENDANCE),
-    (req, res, next) => void postClock(req, res).catch(next),
+    postClock,
   );
   r.post(
     "/attendance/clock/sync",
     requirePermission(Permission.SELF_ATTENDANCE),
-    (req, res, next) => void postClockSyncBatch(req, res).catch(next),
+    postClockSyncBatch,
   );
   r.get(
     "/attendance/users/:userId/clock-events",
     requireHrSensitiveAttendance,
-    (req, res, next) => void getClockEventsForUser(req, res).catch(next),
+    getClockEventsForUser,
   );
 
   // Branches
-  r.get("/branches", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getBranches(req, res).catch(next));
-  r.get("/branches/list", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getBranches(req, res).catch(next));
-  r.post("/branches", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createBranch(req, res).catch(next));
-  r.put("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void updateBranch(req, res).catch(next));
-  r.delete("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void deleteBranch(req, res).catch(next));
+  r.get("/branches", requirePermission(Permission.HR_LEAVE_READ), getBranches);
+  r.get("/branches/list", requirePermission(Permission.HR_LEAVE_READ), getBranches);
+  r.post("/branches", requirePermission(Permission.HR_LEAVE_WRITE), createBranch);
+  r.put("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), updateBranch);
+  r.delete("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), deleteBranch);
 
   // HR - Employees 
-  r.get("/employees", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getEmployees(req, res).catch(next));
-  r.post("/employees", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createEmployee(req, res).catch(next));
-  r.put("/employees/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void updateEmployee(req, res).catch(next));
-  r.delete("/employees/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void deleteEmployee(req, res).catch(next));
-  r.post("/employees/import", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void importEmployees(req, res).catch(next));
+  r.get("/employees", requirePermission(Permission.HR_LEAVE_READ), getEmployees);
+  r.post("/employees", requirePermission(Permission.HR_LEAVE_WRITE), createEmployee);
+  r.put("/employees/:id", requirePermission(Permission.HR_LEAVE_WRITE), updateEmployee);
+  r.delete("/employees/:id", requirePermission(Permission.HR_LEAVE_WRITE), deleteEmployee);
+  r.post("/employees/import", requirePermission(Permission.HR_LEAVE_WRITE), importEmployees);
 
   // Original leave endpoints
   r.post(
     "/hr/leave",
     requirePermission(Permission.SELF_LEAVE),
-    (req, res, next) => void postLeaveRequest(req, res).catch(next),
+    postLeaveRequest,
   );
   r.get(
     "/hr/leave/me",
     requirePermission(Permission.SELF_LEAVE),
-    (req, res, next) => void listMyLeaves(req, res).catch(next),
+    listMyLeaves,
   );
 
   // Finance
-  r.get("/finance/requests", requirePermission(Permission.FINANCE_READ), (req, res, next) => void getFinanceRequests(req, res).catch(next));
-  r.post("/finance/requests", requirePermission(Permission.FINANCE_WRITE), (req, res, next) => void createFinanceRequest(req, res).catch(next));
-  r.put("/finance/requests/:id/approve", requirePermission(Permission.FINANCE_APPROVE), (req, res, next) => void approveFinanceRequest(req, res).catch(next));
-  r.put("/finance/requests/:id/reject", requirePermission(Permission.FINANCE_APPROVE), (req, res, next) => void rejectFinanceRequest(req, res).catch(next));
+  r.get("/finance/requests", requirePermission(Permission.FINANCE_READ), getFinanceRequests);
+  r.post("/finance/requests", requirePermission(Permission.FINANCE_WRITE), createFinanceRequest);
+  r.put("/finance/requests/:id/approve", requirePermission(Permission.FINANCE_APPROVE), approveFinanceRequest);
+  r.put("/finance/requests/:id/reject", requirePermission(Permission.FINANCE_APPROVE), rejectFinanceRequest);
 
   // IT Tickets
-  r.get("/tickets", requirePermission(Permission.IT_TICKET_READ_ALL), (req, res, next) => void getTickets(req, res).catch(next));
-  r.post("/tickets", requirePermission(Permission.IT_TICKET_WRITE), (req, res, next) => void createTicket(req, res).catch(next));
-  r.put("/tickets/:id", requirePermission(Permission.IT_TICKET_WRITE), (req, res, next) => void updateTicket(req, res).catch(next));
-  r.delete("/tickets/:id", requirePermission(Permission.IT_TICKET_WRITE), (req, res, next) => void deleteTicket(req, res).catch(next));
-  r.get("/it/queues", requirePermission(Permission.IT_TICKET_READ_ALL), (req, res, next) => void getQueues(req, res).catch(next));
+  r.get("/tickets", requirePermission(Permission.IT_TICKET_READ_ALL), getTickets);
+  r.post("/tickets", requirePermission(Permission.IT_TICKET_WRITE), createTicket);
+  r.put("/tickets/:id", requirePermission(Permission.IT_TICKET_WRITE), updateTicket);
+  r.delete("/tickets/:id", requirePermission(Permission.IT_TICKET_WRITE), deleteTicket);
+  r.get("/it/queues", requirePermission(Permission.IT_TICKET_READ_ALL), getQueues);
 
   // Operations - Clients
-  r.get("/clients", requirePermission(Permission.OPS_READ), (req, res, next) => void getClients(req, res).catch(next));
-  r.post("/clients", requirePermission(Permission.OPS_WRITE), (req, res, next) => void createClient(req, res).catch(next));
-  r.put("/clients/:id", requirePermission(Permission.OPS_WRITE), (req, res, next) => void updateClient(req, res).catch(next));
-  r.delete("/clients/:id", requirePermission(Permission.OPS_WRITE), (req, res, next) => void deleteClient(req, res).catch(next));
+  r.get("/clients", requirePermission(Permission.OPS_READ), getClients);
+  r.post("/clients", requirePermission(Permission.OPS_WRITE), createClient);
+  r.put("/clients/:id", requirePermission(Permission.OPS_WRITE), updateClient);
+  r.delete("/clients/:id", requirePermission(Permission.OPS_WRITE), deleteClient);
 
   // Operations - Conversations
-  r.get("/conversations", requirePermission(Permission.OPS_READ), (req, res, next) => void getConversations(req, res).catch(next));
-  r.post("/conversations", requirePermission(Permission.OPS_WRITE), (req, res, next) => void createConversation(req, res).catch(next));
+  r.get("/conversations", requirePermission(Permission.OPS_READ), getConversations);
+  r.post("/conversations", requirePermission(Permission.OPS_WRITE), createConversation);
 
   // Notifications
-  r.get("/notifications", requirePermission(Permission.SELF_PROFILE), (req, res, next) => void getNotifications(req, res).catch(next));
-  r.put("/notifications/:id/read", requirePermission(Permission.SELF_PROFILE), (req, res, next) => void markAsRead(req, res).catch(next));
-  r.put("/notifications/read-all", requirePermission(Permission.SELF_PROFILE), (req, res, next) => void markAllAsRead(req, res).catch(next));
+  r.get("/notifications", requirePermission(Permission.SELF_PROFILE), getNotifications);
+  r.put("/notifications/:id/read", requirePermission(Permission.SELF_PROFILE), markAsRead);
+  r.put("/notifications/read-all", requirePermission(Permission.SELF_PROFILE), markAllAsRead);
 
   return r;
 }

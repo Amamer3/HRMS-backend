@@ -4,6 +4,8 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AttendanceSyncService } from "../services/attendanceSyncService.js";
 import { appendAuditLog } from "../middleware/auditMiddleware.js";
+import { BadRequestError, NotFoundError, UnauthorizedError } from "../lib/errors.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 const clockBody = z.object({
   branchId: z.string().uuid().optional(),
@@ -27,10 +29,9 @@ const correctionBody = z.object({
   reason: z.string(),
 });
 
-export async function getTodayAttendance(req: Request, res: Response) {
+export const getTodayAttendance = asyncHandler(async (req: Request, res: Response) => {
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
 
   const today = new Date();
@@ -68,23 +69,22 @@ export async function getTodayAttendance(req: Request, res: Response) {
     clockIn: clockIn?.clientTimestamp,
     clockOut: clockOut?.clientTimestamp,
   });
-}
+});
 
-export async function checkIn(req: Request, res: Response) {
+export const checkIn = asyncHandler(async (req: Request, res: Response) => {
   req.body.type = "CLOCK_IN";
   return postClock(req, res);
-}
+});
 
-export async function checkOut(req: Request, res: Response) {
+export const checkOut = asyncHandler(async (req: Request, res: Response) => {
   req.body.type = "CLOCK_OUT";
   return postClock(req, res);
-}
+});
 
-export async function postClock(req: Request, res: Response) {
+export const postClock = asyncHandler(async (req: Request, res: Response) => {
   const body = clockBody.parse(req.body);
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
 
   // Map fields from frontend
@@ -94,8 +94,7 @@ export async function postClock(req: Request, res: Response) {
   let branchId = body.branch_id ?? body.branchId;
 
   if (lat === undefined || lng === undefined) {
-    res.status(400).json({ error: "latitude_and_longitude_required" });
-    return;
+    throw new BadRequestError("Latitude and longitude are required");
   }
 
   // If branchId is not provided, try to find the user's primary branch
@@ -105,8 +104,7 @@ export async function postClock(req: Request, res: Response) {
       select: { primaryBranchId: true },
     });
     if (!user?.primaryBranchId) {
-      res.status(400).json({ error: "branch_id_required" });
-      return;
+      throw new BadRequestError("Branch ID is required");
     }
     branchId = user.primaryBranchId;
   }
@@ -139,12 +137,11 @@ export async function postClock(req: Request, res: Response) {
   });
 
   res.status(result.status === "created" ? 201 : 200).json(result);
-}
+});
 
-export async function getAttendanceHistory(req: Request, res: Response) {
+export const getAttendanceHistory = asyncHandler(async (req: Request, res: Response) => {
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
 
   const history = await prisma.attendanceSession.findMany({
@@ -177,13 +174,12 @@ export async function getAttendanceHistory(req: Request, res: Response) {
   });
 
   res.json(formattedHistory);
-}
+});
 
-export async function requestCorrection(req: Request, res: Response) {
+export const requestCorrection = asyncHandler(async (req: Request, res: Response) => {
   const body = correctionBody.parse(req.body);
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
 
   const workDate = new Date(body.missed_date);
@@ -216,12 +212,11 @@ export async function requestCorrection(req: Request, res: Response) {
   });
 
   res.status(201).json(adjustment);
-}
+});
 
-export async function getMyCorrections(req: Request, res: Response) {
+export const getMyCorrections = asyncHandler(async (req: Request, res: Response) => {
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
 
   const corrections = await (prisma as any).attendanceAdjustment.findMany({
@@ -241,13 +236,12 @@ export async function getMyCorrections(req: Request, res: Response) {
   }));
 
   res.json(formatted);
-}
+});
 
-export async function postClockSyncBatch(req: Request, res: Response) {
+export const postClockSyncBatch = asyncHandler(async (req: Request, res: Response) => {
   const batch = syncBody.parse(req.body);
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
   const svc = new AttendanceSyncService(prisma);
   const results = [];
@@ -286,9 +280,9 @@ export async function postClockSyncBatch(req: Request, res: Response) {
     results.push(r);
   }
   res.status(200).json({ results });
-}
+});
 
-export async function getClockEventsForUser(req: Request, res: Response) {
+export const getClockEventsForUser = asyncHandler(async (req: Request, res: Response) => {
   const userId = String(req.params.userId);
   const take = req.query.take ? Number(req.query.take) : 50;
   const items = await prisma.clockEvent.findMany({
@@ -311,4 +305,4 @@ export async function getClockEventsForUser(req: Request, res: Response) {
     },
   });
   res.json({ items });
-}
+});

@@ -13,11 +13,15 @@ COPY docs ./docs
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN apk update && apk upgrade --no-cache && addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+# Install dependencies needed by Prisma on Alpine
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache openssl libc6-compat && \
+    addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
@@ -26,7 +30,9 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/docs ./docs
 COPY scripts ./scripts
 
-RUN chmod +x ./scripts/start.sh
+# Ensure scripts are executable and owned by nodejs user
+RUN chmod +x ./scripts/start.sh && \
+    chown -R nodejs:nodejs /app
 
 USER nodejs
 EXPOSE 4000

@@ -5,6 +5,8 @@ import { prisma } from "../lib/prisma.js";
 import { WorkflowEngine } from "../services/workflowEngine.js";
 import { appendAuditLog } from "../middleware/auditMiddleware.js";
 import { NotificationService } from "../services/notification/NotificationService.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
+import { UnauthorizedError } from "../lib/errors.js";
 
 const createLeave = z.object({
   leaveTypeId: z.string().uuid(),
@@ -17,11 +19,10 @@ const createLeave = z.object({
 /**
  * Example flow: create WorkflowInstance + LeaveRequest in DRAFT, transition to SUBMITTED, notify approvers.
  */
-export async function postLeaveRequest(req: Request, res: Response) {
+export const postLeaveRequest = asyncHandler(async (req: Request, res: Response) => {
   const body = createLeave.parse(req.body);
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
 
   const wf = await prisma.workflowInstance.create({
@@ -77,12 +78,11 @@ export async function postLeaveRequest(req: Request, res: Response) {
   });
 
   res.status(201).json({ leave, workflowId: wf.id });
-}
+});
 
-export async function listMyLeaves(req: Request, res: Response) {
+export const listMyLeaves = asyncHandler(async (req: Request, res: Response) => {
   if (!req.userId) {
-    res.status(400).json({ error: "user_not_provisioned" });
-    return;
+    throw new UnauthorizedError("User not provisioned");
   }
   const items = await prisma.leaveRequest.findMany({
     where: { userId: req.userId },
@@ -91,4 +91,4 @@ export async function listMyLeaves(req: Request, res: Response) {
     take: 50,
   });
   res.json({ items });
-}
+});
