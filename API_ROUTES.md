@@ -106,17 +106,14 @@ Example response:
 
 ---
 
-## IT / Finance / Ops / Payroll / Reporting (stubs)
+## IT / Finance / Ops / Reporting (stubs)
 
 | Method | Path                 | Auth | RBAC                     |
 | ------ | -------------------- | ---- | ------------------------ |
 | GET    | `/it/tickets`        | JWT  | `IT_TICKET_READ_ALL`    |
 | GET    | `/finance/requests` | JWT  | `FINANCE_READ`           |
 | GET    | `/ops/pipeline`      | JWT  | `OPS_READ`               |
-| GET    | `/payroll/runs`      | JWT  | `HR_PAYROLL_READ`        |
 | GET    | `/reports/summary`   | JWT  | `REPORTING_READ`         |
-
-Extend these paths per SRS (`FR-IT-*`, `FR-FIN-*`, `FR-OPS-*`, payroll exports) using the same `requirePermission` pattern as in `src/routes/v1/index.ts`.
 
 ---
 
@@ -126,9 +123,6 @@ Extend these paths per SRS (`FR-IT-*`, `FR-FIN-*`, `FR-OPS-*`, payroll exports) 
 | -------- | ------ | ------------------------------------ | ------------------------------- |
 | HR       | GET    | `/hr/leave-types`                    | read: HR/Manager; write: HR    |
 | HR       | POST   | `/hr/leave/:id/approve`              | `HR_LEAVE_APPROVE` / Manager    |
-| HR       | GET    | `/hr/appraisals/cycles`             | `HR_APPRAISAL_READ`             |
-| Payroll  | POST   | `/payroll/runs/:id/lock`             | `HR_PAYROLL_WRITE`              |
-| Payroll  | PATCH  | `/payroll/lines/:id/deductions/:d`   | `HR_PAYROLL_OVERRIDE` + audit   |
 | IT       | POST   | `/it/tickets`                        | `IT_TICKET_WRITE`               |
 | Finance  | POST   | `/finance/requests`                  | `FINANCE_WRITE` / approve chain |
 | Ops      | POST   | `/ops/clients`                       | `OPS_WRITE`                     |

@@ -16,11 +16,6 @@ export const Permission = {
   HR_LEAVE_APPROVE: "hr.leave.approve",
   HR_ATTENDANCE_READ_SENSITIVE: "hr.attendance.read_sensitive",
   HR_ATTENDANCE_WRITE: "hr.attendance.write",
-  HR_APPRAISAL_READ: "hr.appraisal.read",
-  HR_APPRAISAL_WRITE: "hr.appraisal.write",
-  HR_PAYROLL_READ: "hr.payroll.read",
-  HR_PAYROLL_WRITE: "hr.payroll.write",
-  HR_PAYROLL_OVERRIDE: "hr.payroll.override",
 
   // Self-service (employee)
   SELF_PROFILE: "self.profile",
@@ -62,11 +57,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
     Permission.HR_LEAVE_APPROVE,
     Permission.HR_ATTENDANCE_READ_SENSITIVE,
     Permission.HR_ATTENDANCE_WRITE,
-    Permission.HR_APPRAISAL_READ,
-    Permission.HR_APPRAISAL_WRITE,
-    Permission.HR_PAYROLL_READ,
-    Permission.HR_PAYROLL_WRITE,
-    Permission.HR_PAYROLL_OVERRIDE,
     Permission.SELF_PROFILE,
     Permission.SELF_LEAVE,
     Permission.SELF_ATTENDANCE,
@@ -76,8 +66,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
   MANAGER: [
     Permission.HR_LEAVE_READ,
     Permission.HR_LEAVE_APPROVE,
-    Permission.HR_APPRAISAL_READ,
-    Permission.HR_APPRAISAL_WRITE,
     Permission.SELF_PROFILE,
     Permission.SELF_LEAVE,
     Permission.SELF_ATTENDANCE,
@@ -97,7 +85,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
   READ_ONLY: [
     Permission.SELF_PROFILE, 
     Permission.HR_LEAVE_READ,
-    Permission.HR_APPRAISAL_READ,
     Permission.IT_TICKET_READ_ALL,
     Permission.FINANCE_READ,
     Permission.OPS_READ,

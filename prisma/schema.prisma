@@ -45,21 +45,15 @@ model User {
   leaveRequests   LeaveRequest[]
   clockEvents     ClockEvent[]
   attendanceSessions AttendanceSession[]
-  payrollLines    PayrollLine[]
   workflowActions WorkflowTransition[] @relation("TransitionActor")
   auditLogs       AuditLog[]           @relation("AuditActor")
   notifications   InAppNotification[]
-  appraisalsAsSubject Appraisal[] @relation("AppraisalSubject")
-  appraisalsAsReviewer Appraisal[] @relation("AppraisalReviewer")
-  targets         EmployeeTarget[]
   ticketsCreated  ItTicket[] @relation("TicketCreator")
   ticketsAssigned ItTicket[] @relation("TicketAssignee")
   financeRequests FinanceRequest[]
   opsActivities   OpsActivity[]
   leaveLedger     LeaveLedgerEntry[]
-  payrollOverrides PayrollDeduction[] @relation("PayrollOverrideActor")
   ticketComments  ItTicketComment[]   @relation("TicketCommentAuthor")
-  payrollSettingsUpdates PayrollSetting[] @relation("PayrollSettingEditor")
   blacklistedTokens TokenBlacklist[]
 
   @@index([entraObjectId])
@@ -160,9 +154,7 @@ model EmployeeDeployment {
 
 enum WorkflowModule {
   HR_LEAVE
-  HR_APPRAISAL
   HR_ATTENDANCE_ADJUSTMENT
-  PAYROLL
   IT_TICKET
   FINANCE_REQUEST
   OPS_CLIENT
@@ -197,7 +189,6 @@ model WorkflowInstance {
 
   transitions      WorkflowTransition[]
   leaveRequest     LeaveRequest?
-  appraisal        Appraisal?
   itTicket         ItTicket?
   financeRequest   FinanceRequest?
   pipelineDeal     PipelineDeal?
@@ -308,56 +299,6 @@ model LeaveLedgerEntry {
 }
 
 // ---------------------------------------------------------------------------
-// HR — Appraisals & targets
-// ---------------------------------------------------------------------------
-
-model AppraisalCycle {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String
-  periodStart DateTime @db.Date
-  periodEnd   DateTime @db.Date
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-
-  appraisals Appraisal[]
-  targets    EmployeeTarget[]
-
-  @@index([periodStart, periodEnd])
-}
-
-model Appraisal {
-  id           String          @id @default(uuid()) @db.Uuid
-  cycleId      String          @db.Uuid
-  cycle        AppraisalCycle  @relation(fields: [cycleId], references: [id])
-  subjectUserId String         @db.Uuid
-  subject       User            @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
-  reviewerUserId String?      @db.Uuid
-  reviewer      User?           @relation("AppraisalReviewer", fields: [reviewerUserId], references: [id])
-  workflowInstanceId String   @unique @db.Uuid
-  workflowInstance   WorkflowInstance @relation(fields: [workflowInstanceId], references: [id])
-  overallScore Decimal?       @db.Decimal(5, 2)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-
-  @@index([cycleId, subjectUserId])
-}
-
-model EmployeeTarget {
-  id           String         @id @default(uuid()) @db.Uuid
-  cycleId      String         @db.Uuid
-  cycle        AppraisalCycle @relation(fields: [cycleId], references: [id])
-  userId       String         @db.Uuid
-  user         User           @relation(fields: [userId], references: [id])
-  title        String
-  kpiJson      Json
-  weight       Decimal        @db.Decimal(5, 2)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-
-  @@index([userId, cycleId])
-}
-
-// ---------------------------------------------------------------------------
 // Attendance & GPS
 // ---------------------------------------------------------------------------
 
@@ -420,107 +361,6 @@ model ClockEvent {
   @@index([userId, serverTimestamp(sort: Desc)])
   @@index([branchId, serverTimestamp(sort: Desc)])
   @@index([sessionId, serverTimestamp])
-}
-
-model MonthlyLateSummary {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @db.Uuid
-  year        Int
-  month       Int
-  lateCount   Int      @default(0)
-  flaggedEscalation Boolean @default(false) // 6+ lates
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([userId, year, month])
-  @@index([year, month, lateCount])
-}
-
-// ---------------------------------------------------------------------------
-// Payroll
-// ---------------------------------------------------------------------------
-
-enum PayrollRunStatus {
-  DRAFT
-  REVIEW
-  LOCKED
-  EXPORTED
-}
-
-model PayrollRun {
-  id         String           @id @default(uuid()) @db.Uuid
-  year       Int
-  month      Int
-  status     PayrollRunStatus @default(DRAFT)
-  lockedAt   DateTime?
-  exportedAt DateTime?
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-
-  lines PayrollLine[]
-
-  @@unique([year, month])
-  @@index([status, year, month])
-}
-
-enum PayrollDeductionType {
-  LATE_PATTERN
-  ABSENCE_UNAPPROVED
-  MANUAL
-  OTHER
-}
-
-model PayrollLine {
-  id            String     @id @default(uuid()) @db.Uuid
-  payrollRunId  String     @db.Uuid
-  payrollRun    PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
-  userId        String     @db.Uuid
-  user          User       @relation(fields: [userId], references: [id])
-  grossDays     Decimal    @db.Decimal(6, 2)
-  netPayDays    Decimal    @db.Decimal(6, 2)
-  notes         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  deductions PayrollDeduction[]
-
-  @@unique([payrollRunId, userId])
-  @@index([payrollRunId])
-  @@index([userId, payrollRunId])
-}
-
-model PayrollDeduction {
-  id             String               @id @default(uuid()) @db.Uuid
-  payrollLineId  String               @db.Uuid
-  payrollLine    PayrollLine          @relation(fields: [payrollLineId], references: [id], onDelete: Cascade)
-  type           PayrollDeductionType
-  days           Decimal              @db.Decimal(6, 2)
-  amount         Decimal?             @db.Decimal(12, 2)
-  ruleSnapshot   Json?
-  originalDays   Decimal?             @db.Decimal(6, 2)
-  overriddenById String?              @db.Uuid
-  overriddenBy   User?                @relation("PayrollOverrideActor", fields: [overriddenById], references: [id])
-  overrideReason String?
-  createdAt      DateTime             @default(now())
-
-  @@index([payrollLineId])
-  @@index([type])
-}
-
-model PayrollSetting {
-  id                   String   @id @default(uuid()) @db.Uuid
-  payrollCycleType     String   @default("MONTHLY") // MONTHLY, WEEKLY, BI_WEEKLY
-  payslipFormatJson    Json     @default("{}")
-  taxConfigJson        Json     @default("{}")
-  benefitsConfigJson   Json     @default("{}")
-  lateDeductionRules   Json     @default("[]")
-  absenceDeductionRules Json    @default("[]")
-  overtimeMultiplier   Decimal  @db.Decimal(3, 2) @default(1.5)
-  lastUpdatedById      String?  @db.Uuid
-  lastUpdatedBy        User?    @relation("PayrollSettingEditor", fields: [lastUpdatedById], references: [id])
-  updatedAt            DateTime @updatedAt
-
-  @@index([updatedAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -653,8 +493,6 @@ enum NotificationEventType {
   WORKFLOW_REJECTED
   WORKFLOW_SLA_WARNING
   LEAVE_BALANCE_LOW
-  PAYROLL_LOCKED
-  BIRTHDAY_GREETING
   IT_TICKET_UPDATED
 }
 
@@ -704,21 +542,6 @@ model InAppNotification {
   createdAt   DateTime @default(now())
 
   @@index([userId, readAt, createdAt(sort: Desc)])
-}
-
-// ---------------------------------------------------------------------------
-// Birthday automation
-// ---------------------------------------------------------------------------
-
-model BirthdayRunLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  runDate   DateTime @db.Date
-  userId    String   @db.Uuid
-  channel   NotificationChannel
-  status    String
-  createdAt DateTime @default(now())
-
-  @@index([runDate])
 }
 
 // ---------------------------------------------------------------------------

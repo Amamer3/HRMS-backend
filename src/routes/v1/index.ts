@@ -5,7 +5,7 @@ import { getAuditLogs } from "../../controllers/auditController.js";
 import { getClockEventsForUser, postClock, postClockSyncBatch } from "../../controllers/attendanceController.js";
 import { listMyLeaves, postLeaveRequest } from "../../controllers/leaveController.js";
 import { getHealth } from "../../controllers/healthController.js";
-import { getSummary, getAttendanceReport, getLeaveReport, getPayrollReport } from "../../controllers/reportController.js";
+import { getSummary, getAttendanceReport, getLeaveReport } from "../../controllers/reportController.js";
 import { 
   getAllLeaves, 
   getPendingDashboard, 
@@ -27,27 +27,11 @@ import {
   approveCorrection,
 } from "../../controllers/attendanceManagementController.js";
 import {
-  getUpcomingBirthdays,
-  getBirthdayItems,
-  createBirthdayItem,
-  publishBirthdayItem,
-  getAppraisals,
-  createAppraisal,
   getEmployees,
   createEmployee,
   updateEmployee,
   deleteEmployee,
   importEmployees,
-  getShifts,
-  createShift,
-  deleteShift,
-  getShiftAssignments,
-  createShiftAssignment,
-  getPerformanceTargets,
-  createPerformanceTarget,
-  submitPerformanceTarget,
-  getPayroll,
-  generatePayroll,
 } from "../../controllers/hrController.js";
 import {
   getBranches,
@@ -56,8 +40,6 @@ import {
   deleteBranch,
   getUsers,
   updateUserRole,
-  getPayrollSettings,
-  updatePayrollSettings,
   bootstrapSuperAdmin,
   getEntraGroupRoleMappings,
   createOrUpdateEntraGroupRoleMapping,
@@ -345,23 +327,12 @@ export function buildV1Router(env: Env): Router {
     (req, res, next) => void cleanupExpiredTokens(req, res).catch(next),
   );
 
-  // Admin - Settings - Payroll
-  r.get(
-    "/settings/payroll",
-    requirePermission(Permission.HR_PAYROLL_READ),
-    (req, res, next) => void getPayrollSettings(req, res).catch(next),
-  );
-  r.put(
-    "/settings/payroll",
-    requirePermission(Permission.HR_PAYROLL_WRITE),
-    (req, res, next) => void updatePayrollSettings(req, res).catch(next),
-  );
+
 
   // Reports
   r.get("/reports/summary", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getSummary(req, res).catch(next));
   r.get("/reports/attendance", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getAttendanceReport(req, res).catch(next));
   r.get("/reports/leave", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getLeaveReport(req, res).catch(next));
-  r.get("/reports/payroll", requirePermission(Permission.REPORTING_READ), (req, res, next) => void getPayrollReport(req, res).catch(next));
 
   // Leave Management
   r.get("/leave", requirePermission(Permission.SELF_LEAVE), (req, res, next) => void getAllLeaves(req, res).catch(next));
@@ -400,21 +371,11 @@ export function buildV1Router(env: Env): Router {
     (req, res, next) => void getClockEventsForUser(req, res).catch(next),
   );
 
-  // HR - Birthdays
-  r.get("/hr/birthdays/upcoming", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getUpcomingBirthdays(req, res).catch(next));
-  r.get("/hr/birthdays/items", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getBirthdayItems(req, res).catch(next));
-  r.post("/hr/birthdays/items", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createBirthdayItem(req, res).catch(next));
-  r.put("/hr/birthdays/items/:id/publish", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void publishBirthdayItem(req, res).catch(next));
-
   // Branches
   r.get("/branches", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getBranches(req, res).catch(next));
   r.post("/branches", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createBranch(req, res).catch(next));
   r.put("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void updateBranch(req, res).catch(next));
   r.delete("/branches/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void deleteBranch(req, res).catch(next));
-
-  // HR - Appraisals
-  r.get("/appraisals", requirePermission(Permission.HR_APPRAISAL_READ), (req, res, next) => void getAppraisals(req, res).catch(next));
-  r.post("/appraisals", requirePermission(Permission.HR_APPRAISAL_WRITE), (req, res, next) => void createAppraisal(req, res).catch(next));
 
   // HR - Employees 
   r.get("/employees", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getEmployees(req, res).catch(next));
@@ -422,24 +383,6 @@ export function buildV1Router(env: Env): Router {
   r.put("/employees/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void updateEmployee(req, res).catch(next));
   r.delete("/employees/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void deleteEmployee(req, res).catch(next));
   r.post("/employees/import", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void importEmployees(req, res).catch(next));
-
-  // HR - Shifts
-  r.get("/shifts", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getShifts(req, res).catch(next));
-  r.post("/shifts", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createShift(req, res).catch(next));
-  r.delete("/shifts/:id", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void deleteShift(req, res).catch(next));
-
-  // HR - Shift Assignments
-  r.get("/shift-assignments", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getShiftAssignments(req, res).catch(next));
-  r.post("/shift-assignments", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createShiftAssignment(req, res).catch(next));
-
-  // HR - Performance Targets
-  r.get("/performance/targets", requirePermission(Permission.HR_LEAVE_READ), (req, res, next) => void getPerformanceTargets(req, res).catch(next));
-  r.post("/performance/targets", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void createPerformanceTarget(req, res).catch(next));
-  r.put("/performance/targets/:id/submit", requirePermission(Permission.HR_LEAVE_WRITE), (req, res, next) => void submitPerformanceTarget(req, res).catch(next));
-
-  // HR - Payroll
-  r.get("/payroll", requirePermission(Permission.HR_PAYROLL_READ), (req, res, next) => void getPayroll(req, res).catch(next));
-  r.post("/payroll/generate", requirePermission(Permission.HR_PAYROLL_WRITE), (req, res, next) => void generatePayroll(req, res).catch(next));
 
   // Original leave endpoints
   r.post(

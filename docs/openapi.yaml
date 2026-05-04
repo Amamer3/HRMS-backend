@@ -171,8 +171,6 @@ components:
           type: integer
         onLeaveToday:
           type: integer
-        upcomingBirthdays:
-          type: integer
     AttendanceReport:
       type: object
       properties:
@@ -197,21 +195,6 @@ components:
         approved:
           type: integer
         pending:
-          type: integer
-    PayrollReport:
-      type: object
-      properties:
-        month:
-          type: integer
-        year:
-          type: integer
-        totalEmployees:
-          type: integer
-        totalAmount:
-          type: number
-        processedCount:
-          type: integer
-        pendingCount:
           type: integer
     AttendanceRecord:
       type: object
@@ -307,116 +290,6 @@ components:
         status:
           type: string
           enum: [ACTIVE, INACTIVE, TERMINATED]
-    Birthday:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        employeeId:
-          type: string
-          format: uuid
-        employeeName:
-          type: string
-        dateOfBirth:
-          type: string
-          format: date
-        daysUntilBirthday:
-          type: integer
-    Appraisal:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        employeeId:
-          type: string
-          format: uuid
-        year:
-          type: integer
-        rating:
-          type: number
-        comments:
-          type: string
-        status:
-          type: string
-          enum: [DRAFT, SUBMITTED, COMPLETED]
-    Shift:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        startTime:
-          type: string
-          format: time
-        endTime:
-          type: string
-          format: time
-        workingHours:
-          type: number
-    ShiftAssignment:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        employeeId:
-          type: string
-          format: uuid
-        shiftId:
-          type: string
-          format: uuid
-        startDate:
-          type: string
-          format: date
-        endDate:
-          type: string
-          format: date
-    PerformanceTarget:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        employeeId:
-          type: string
-          format: uuid
-        title:
-          type: string
-        description:
-          type: string
-        targetValue:
-          type: number
-        status:
-          type: string
-          enum: [PENDING, SUBMITTED, COMPLETED]
-    Payroll:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        employeeId:
-          type: string
-          format: uuid
-        month:
-          type: integer
-        year:
-          type: integer
-        basicSalary:
-          type: number
-        allowances:
-          type: number
-        deductions:
-          type: number
-        netSalary:
-          type: number
-        status:
-          type: string
-          enum: [DRAFT, APPROVED, PAID]
     FinanceRequest:
       type: object
       properties:
@@ -867,18 +740,6 @@ paths:
       responses:
         '200':
           description: Leave report
-  /reports/payroll:
-    get:
-      summary: Get payroll report
-      tags: [Reports]
-      parameters:
-        - name: year
-          in: query
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Payroll report
   /leave:
     get:
       summary: Get all leave requests
@@ -1082,45 +943,6 @@ paths:
       responses:
         '200':
           description: Correction approved
-  /hr/birthdays/upcoming:
-    get:
-      summary: Get upcoming birthdays
-      tags: [HR]
-      parameters:
-        - name: days
-          in: query
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Upcoming birthdays
-  /hr/birthdays/items:
-    get:
-      summary: Get birthday items
-      tags: [HR]
-      responses:
-        '200':
-          description: Birthday items
-    post:
-      summary: Create birthday item
-      tags: [HR]
-      responses:
-        '201':
-          description: Item created
-  /hr/birthdays/items/{id}/publish:
-    put:
-      summary: Publish birthday item
-      tags: [HR]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Item published
   /branches:
     get:
       summary: Get all branches
@@ -1233,29 +1055,6 @@ paths:
       responses:
         '200':
           description: Branch deleted
-  /appraisals:
-    get:
-      summary: Get appraisals
-      tags: [HR]
-      parameters:
-        - name: employeeId
-          in: query
-          schema:
-            type: string
-            format: uuid
-        - name: year
-          in: query
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Appraisals
-    post:
-      summary: Create appraisal
-      tags: [HR]
-      responses:
-        '201':
-          description: Appraisal created
   /employees:
     get:
       summary: Get all employees
@@ -1312,121 +1111,6 @@ paths:
       responses:
         '200':
           description: Import completed
-  /shifts:
-    get:
-      summary: Get all shifts
-      tags: [HR]
-      responses:
-        '200':
-          description: Shifts
-    post:
-      summary: Create shift
-      tags: [HR]
-      responses:
-        '201':
-          description: Shift created
-  /shifts/{id}:
-    delete:
-      summary: Delete shift
-      tags: [HR]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Shift deleted
-  /shift-assignments:
-    get:
-      summary: Get shift assignments
-      tags: [HR]
-      parameters:
-        - name: employeeId
-          in: query
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Shift assignments
-    post:
-      summary: Create shift assignment
-      tags: [HR]
-      responses:
-        '201':
-          description: Assignment created
-  /performance/targets:
-    get:
-      summary: Get performance targets
-      tags: [HR]
-      parameters:
-        - name: employeeId
-          in: query
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Performance targets
-    post:
-      summary: Create performance target
-      tags: [HR]
-      responses:
-        '201':
-          description: Target created
-  /performance/targets/{id}/submit:
-    put:
-      summary: Submit performance target
-      tags: [HR]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Target submitted
-  /payroll:
-    get:
-      summary: Get payroll
-      tags: [HR]
-      parameters:
-        - name: month
-          in: query
-          required: true
-          schema:
-            type: integer
-        - name: year
-          in: query
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Payroll data
-  /payroll/generate:
-    post:
-      summary: Generate payroll
-      tags: [HR]
-      parameters:
-        - name: month
-          in: query
-          required: true
-          schema:
-            type: integer
-        - name: year
-          in: query
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Payroll generated
   /finance/requests:
     get:
       summary: Get finance requests

@@ -11,10 +11,10 @@ type WorkflowState = WorkflowRow["currentState"];
  * Configurable transitions per module. Extend with DB-driven rules later without redesign (NFR-10/11).
  * States align with SRS: Draft → Submitted → … (+ Rejected, Cancelled, On Hold, Returned).
  */
-const TRANSITIONS: Record<
+const TRANSITIONS: Partial<Record<
   WorkflowModule,
   Partial<Record<WorkflowState, WorkflowState[]>>
-> = {
+>> = {
   HR_LEAVE: {
     DRAFT: ["SUBMITTED", "CANCELLED"],
     SUBMITTED: ["PENDING_APPROVAL", "RETURNED", "CANCELLED"],
@@ -28,19 +28,6 @@ const TRANSITIONS: Record<
     ON_HOLD: ["PENDING_APPROVAL", "IN_PROGRESS"],
     RETURNED: ["SUBMITTED", "CANCELLED"],
   },
-  HR_APPRAISAL: {
-    DRAFT: ["SUBMITTED", "CANCELLED"],
-    SUBMITTED: ["PENDING_APPROVAL"],
-    PENDING_APPROVAL: ["IN_PROGRESS", "REJECTED", "ON_HOLD"],
-    IN_PROGRESS: ["COMPLETED"],
-    COMPLETED: ["PENDING_REQUESTER_CONFIRMATION"],
-    PENDING_REQUESTER_CONFIRMATION: ["CLOSED", "RETURNED"],
-    CLOSED: [],
-    REJECTED: [],
-    CANCELLED: [],
-    ON_HOLD: ["IN_PROGRESS"],
-    RETURNED: ["SUBMITTED"],
-  },
   HR_ATTENDANCE_ADJUSTMENT: {
     DRAFT: ["SUBMITTED", "CANCELLED"],
     SUBMITTED: ["PENDING_APPROVAL", "CANCELLED"],
@@ -53,19 +40,6 @@ const TRANSITIONS: Record<
     CANCELLED: [],
     ON_HOLD: ["IN_PROGRESS"],
     RETURNED: ["SUBMITTED"],
-  },
-  PAYROLL: {
-    DRAFT: ["SUBMITTED", "CANCELLED"],
-    SUBMITTED: ["PENDING_APPROVAL"],
-    PENDING_APPROVAL: ["IN_PROGRESS", "REJECTED"],
-    IN_PROGRESS: ["COMPLETED", "CLOSED"],
-    COMPLETED: ["CLOSED"],
-    PENDING_REQUESTER_CONFIRMATION: ["CLOSED"],
-    CLOSED: [],
-    REJECTED: [],
-    CANCELLED: [],
-    ON_HOLD: [],
-    RETURNED: [],
   },
   IT_TICKET: {
     DRAFT: ["SUBMITTED", "CANCELLED"],
