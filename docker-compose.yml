@@ -26,6 +26,9 @@ services:
   api:
     build: .
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "4000:4000"
     env_file:

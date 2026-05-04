@@ -10,9 +10,8 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { buildV1Router } from "./routes/v1/index.js";
 import { getHealth } from "./controllers/healthController.js";
 
-const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
-
 export function createApp(env: Env) {
+  const logger = pino({ level: env.LOG_LEVEL });
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet());
@@ -21,10 +20,14 @@ export function createApp(env: Env) {
   app.use(pinoHttp({ logger }));
   app.use(auditContext());
 
+  app.get("/", (_req, res) => {
+    res.json({ status: "ok", message: "HRMS Backend API" });
+  });
+
   app.get("/health", getHealth);
-
-  app.use("/api/v1", createAuthMiddleware(env), auditHttpMutations(), buildV1Router());
-
+  
+  app.use("/api/v1", createAuthMiddleware(env), auditHttpMutations(), buildV1Router(env));
+  
   app.use(errorHandler);
   return app;
 }

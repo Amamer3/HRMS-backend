@@ -12,7 +12,7 @@ export async function getAuditLogs(req: Request, res: Response) {
     action: req.query.action as string | undefined,
     from: req.query.from ? new Date(String(req.query.from)) : undefined,
     to: req.query.to ? new Date(String(req.query.to)) : undefined,
-    take: req.query.take ? Number(req.query.take) : undefined,
+    take: req.query.limit ? Number(req.query.limit) : req.query.take ? Number(req.query.take) : 100,
     skip: req.query.skip ? Number(req.query.skip) : undefined,
   });
   res.json(result);

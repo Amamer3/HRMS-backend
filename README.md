@@ -23,6 +23,7 @@ This document is written for developers who will run, extend, or operate the API
 13. [Scripts](#scripts)
 14. [Troubleshooting](#troubleshooting)
 15. [Security notes](#security-notes)
+16. [Scalar API docs](#scalar-api-docs)
 
 ---
 
@@ -190,6 +191,18 @@ flowchart TD
 ## Authentication and identity
 
 The auth middleware validates the JWT, resolves signing keys from Entra JWKS, maps group IDs to `AppRole` values, and upserts the `User` record.
+
+---
+
+## Scalar API docs
+
+This repository includes a dedicated Scalar integration reference at `docs/scalar-api.md`.
+
+Scalar is an API documentation platform built on OpenAPI, Markdown/MDX, and API registry workflows. Use the doc to record how this backend can be published as OpenAPI, synced with Scalar Docs, and managed from Scalar Registry.
+
+For now, `API_ROUTES.md` remains the canonical route reference, and `docs/scalar-api.md` captures the next steps for integrating with Scalar.
+
+---
 
 ```mermaid
 sequenceDiagram
@@ -397,6 +410,7 @@ In Docker after code or schema changes, rebuild with `docker compose up -d --bui
 |---------|----------------|---------------|
 | Process exits immediately on start | Invalid `.env` | Zod error message lists missing or invalid fields. |
 | 401 on all v1 routes | Token or Azure config | Bearer header present; `AZURE_AD_ISSUER`, `AZURE_AD_AUDIENCE`, tenant; token not expired; API app registration exposes correct scope. |
+| 401 on auth callback/token exchange | OAuth flow mismatch | Ensure frontend sends the authorization code to `/api/v1/auth/azure/token` or uses the backend callback flow, and that `redirect_uri` matches the original authorization request. |
 | 403 on specific routes | RBAC | Entra groups on token; rows in `EntraGroupRoleMap` for those group object IDs; `ROLE_PERMISSIONS` in code. |
 | Empty `appRoles` | No group claims or no DB maps | Token configuration for **groups** claim; seed or migrate `EntraGroupRoleMap`. |
 | DB connection errors from API container | Wrong credentials or Postgres not healthy | `depends_on` healthcheck; `POSTGRES_PASSWORD` matches URL; `DATABASE_URL` in compose environment. |

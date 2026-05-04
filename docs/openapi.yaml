@@ -1,0 +1,1623 @@
+openapi: 3.0.3
+info:
+  title: Echt HR & Process Automation Platform API
+  version: 1.0.0
+  description: REST API for HRMS Backend
+servers:
+  - url: http://localhost:4000/api/v1
+    description: Local development server
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    MeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        before:
+          type: object
+        after:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          type: object
+          properties:
+            email:
+              type: string
+            displayName:
+              type: string
+    AuditLogsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        total:
+          type: integer
+    LeaveRequest:
+      type: object
+      required:
+        - leaveTypeId
+        - startDate
+        - endDate
+        - workingDays
+      properties:
+        leaveTypeId:
+          type: string
+          format: uuid
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        workingDays:
+          type: integer
+        reason:
+          type: string
+    LeaveResponse:
+      type: object
+      properties:
+        leave:
+          type: object
+        workflowId:
+          type: string
+          format: uuid
+    ClockEvent:
+      type: object
+      required:
+        - branchId
+        - type
+        - latitude
+        - longitude
+        - accuracyM
+        - clientTimestamp
+      properties:
+        branchId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [CLOCK_IN, CLOCK_OUT]
+        latitude:
+          type: number
+        longitude:
+          type: number
+        accuracyM:
+          type: number
+        clientTimestamp:
+          type: string
+          format: date-time
+        idempotencyKey:
+          type: string
+          format: uuid
+    ClockSyncBatch:
+      type: array
+      items:
+        $ref: '#/components/schemas/ClockEvent'
+      maxItems: 50
+    Leave:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        leaveTypeId:
+          type: string
+          format: uuid
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        workingDays:
+          type: integer
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED, CANCELLED]
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ReportSummary:
+      type: object
+      properties:
+        totalEmployees:
+          type: integer
+        presentToday:
+          type: integer
+        absentToday:
+          type: integer
+        onLeaveToday:
+          type: integer
+        upcomingBirthdays:
+          type: integer
+    AttendanceReport:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        presentCount:
+          type: integer
+        absentCount:
+          type: integer
+        lateCount:
+          type: integer
+    LeaveReport:
+      type: object
+      properties:
+        leaveType:
+          type: string
+        taken:
+          type: integer
+        remaining:
+          type: integer
+        approved:
+          type: integer
+        pending:
+          type: integer
+    PayrollReport:
+      type: object
+      properties:
+        month:
+          type: integer
+        year:
+          type: integer
+        totalEmployees:
+          type: integer
+        totalAmount:
+          type: number
+        processedCount:
+          type: integer
+        pendingCount:
+          type: integer
+    AttendanceRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        checkInTime:
+          type: string
+          format: date-time
+        checkOutTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [PRESENT, ABSENT, LATE, HALF_DAY]
+    AttendanceCorrection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+    Branch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zipCode:
+          type: string
+        country:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        department:
+          type: string
+        position:
+          type: string
+        joinDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, TERMINATED]
+    Birthday:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        employeeName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        daysUntilBirthday:
+          type: integer
+    Appraisal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        rating:
+          type: number
+        comments:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, SUBMITTED, COMPLETED]
+    Shift:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        workingHours:
+          type: number
+    ShiftAssignment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        shiftId:
+          type: string
+          format: uuid
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+    PerformanceTarget:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        targetValue:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, SUBMITTED, COMPLETED]
+    Payroll:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        month:
+          type: integer
+        year:
+          type: integer
+        basicSalary:
+          type: number
+        allowances:
+          type: number
+        deductions:
+          type: number
+        netSalary:
+          type: number
+        status:
+          type: string
+          enum: [DRAFT, APPROVED, PAID]
+    FinanceRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        description:
+          type: string
+        type:
+          type: string
+          enum: [ADVANCE, REIMBURSEMENT, LOAN]
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, IN_PROGRESS, CLOSED, ON_HOLD]
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        assignedTo:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ITQueue:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        activeTickets:
+          type: integer
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+          format: uuid
+        subject:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, CLOSED, ARCHIVED]
+        createdAt:
+          type: string
+          format: date-time
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Liveness check for load balancer/Kubernetes
+      security: []
+      responses:
+        '200':
+          description: OK
+  /me:
+    get:
+      summary: Get current user profile
+      description: Token claims + resolved roles
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/status:
+    get:
+      summary: Check authentication status
+      description: Validate current JWT token and return user information
+      responses:
+        '200':
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Token is invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/logout:
+    post:
+      summary: Logout user
+      description: Invalidate current session (client-side token clearing)
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logged out successfully"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/azure/login:
+    get:
+      summary: Initiate Azure AD login
+      description: Redirect to Microsoft Azure AD for authentication
+      parameters:
+        - name: redirect_uri
+          in: query
+          description: Where to redirect after authentication
+          schema:
+            type: string
+            format: uri
+            example: "http://localhost:3000/auth/callback"
+      security: []
+      responses:
+        '302':
+          description: Redirect to Azure AD
+  /auth/azure/callback:
+    get:
+      summary: Azure AD callback
+      description: Handle Azure AD authentication callback and exchange code for tokens
+      parameters:
+        - name: code
+          in: query
+          description: Authorization code from Azure AD
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          description: Original redirect URI
+          schema:
+            type: string
+            format: uri
+      security: []
+      responses:
+        '302':
+          description: Redirect to frontend with tokens
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Token exchange failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /audit/logs:
+    get:
+      summary: Get audit logs
+      description: Paginated immutable audit trail
+      parameters:
+        - name: resourceType
+          in: query
+          schema:
+            type: string
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+        - name: actorUserId
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: take
+          in: query
+          schema:
+            type: integer
+        - name: skip
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /hr/leave:
+    post:
+      summary: Create leave request
+      description: Create leave + workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveRequest'
+      responses:
+        '201':
+          description: Leave created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: List my leaves
+      description: List caller's leave rows
+      responses:
+        '200':
+          description: Leaves
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /hr/leave/me:
+    get:
+      summary: List my leaves
+      description: List caller's leave rows
+      responses:
+        '200':
+          description: Leaves
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /attendance/clock:
+    post:
+      summary: Clock in/out
+      description: Single clock-in/out (online)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClockEvent'
+      responses:
+        '200':
+          description: Clocked
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /attendance/clock/sync:
+    post:
+      summary: Batch clock sync
+      description: Batch offline sync (max 50)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClockSyncBatch'
+      responses:
+        '200':
+          description: Synced
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /attendance/users/{userId}/clock-events:
+    get:
+      summary: Get clock events for user
+      description: Location audit (lat/lng, distance)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Clock events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /reports/summary:
+    get:
+      summary: Get dashboard summary
+      tags: [Reports]
+      responses:
+        '200':
+          description: Summary data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSummary'
+  /reports/attendance:
+    get:
+      summary: Get attendance report
+      tags: [Reports]
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Attendance report
+  /reports/leave:
+    get:
+      summary: Get leave report
+      tags: [Reports]
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Leave report
+  /reports/payroll:
+    get:
+      summary: Get payroll report
+      tags: [Reports]
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payroll report
+  /leave:
+    get:
+      summary: Get all leave requests
+      tags: [Leave]
+      parameters:
+        - name: employee_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Leave requests
+    post:
+      summary: Create leave request
+      tags: [Leave]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveRequest'
+      responses:
+        '201':
+          description: Leave created
+  /leave/pending-dashboard:
+    get:
+      summary: Get pending leaves dashboard
+      tags: [Leave]
+      responses:
+        '200':
+          description: Pending leaves
+  /leave/{id}:
+    put:
+      summary: Update leave request
+      tags: [Leave]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Leave updated
+    delete:
+      summary: Delete leave request
+      tags: [Leave]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Leave deleted
+  /leave/{id}/approve:
+    put:
+      summary: Approve leave request
+      tags: [Leave]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Leave approved
+  /leave/{id}/reject:
+    put:
+      summary: Reject leave request
+      tags: [Leave]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Leave rejected
+  /leave/{id}/return:
+    put:
+      summary: Mark leave as returned
+      tags: [Leave]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Leave returned
+  /leave/{id}/submit:
+    put:
+      summary: Submit leave request
+      tags: [Leave]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Leave submitted
+  /attendance:
+    get:
+      summary: Get all attendance records
+      tags: [Attendance]
+      parameters:
+        - name: employeeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Attendance records
+  /attendance/today:
+    get:
+      summary: Get today's attendance
+      tags: [Attendance]
+      responses:
+        '200':
+          description: Today's attendance
+  /attendance/corrections:
+    get:
+      summary: Get attendance corrections
+      tags: [Attendance]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Corrections
+    post:
+      summary: Request attendance correction
+      tags: [Attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceCorrection'
+      responses:
+        '201':
+          description: Correction requested
+  /attendance/checkin:
+    post:
+      summary: Check in
+      tags: [Attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClockEvent'
+      responses:
+        '200':
+          description: Checked in
+  /attendance/checkout:
+    post:
+      summary: Check out
+      tags: [Attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClockEvent'
+      responses:
+        '200':
+          description: Checked out
+  /attendance/corrections/{id}/approve:
+    put:
+      summary: Approve attendance correction
+      tags: [Attendance]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Correction approved
+  /hr/birthdays/upcoming:
+    get:
+      summary: Get upcoming birthdays
+      tags: [HR]
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Upcoming birthdays
+  /hr/birthdays/items:
+    get:
+      summary: Get birthday items
+      tags: [HR]
+      responses:
+        '200':
+          description: Birthday items
+    post:
+      summary: Create birthday item
+      tags: [HR]
+      responses:
+        '201':
+          description: Item created
+  /hr/birthdays/items/{id}/publish:
+    put:
+      summary: Publish birthday item
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item published
+  /branches:
+    get:
+      summary: Get all branches
+      tags: [HR]
+      responses:
+        '200':
+          description: List of branches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Branch'
+    post:
+      summary: Create a new branch
+      tags: [HR]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - address
+                - city
+                - country
+              properties:
+                name:
+                  type: string
+                address:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                zipCode:
+                  type: string
+                country:
+                  type: string
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE]
+                  default: ACTIVE
+      responses:
+        '201':
+          description: Branch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branch'
+  /branches/{id}:
+    put:
+      summary: Update a branch
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                address:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                zipCode:
+                  type: string
+                country:
+                  type: string
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE]
+      responses:
+        '200':
+          description: Branch updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branch'
+    delete:
+      summary: Delete a branch
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Branch deleted
+  /appraisals:
+    get:
+      summary: Get appraisals
+      tags: [HR]
+      parameters:
+        - name: employeeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Appraisals
+    post:
+      summary: Create appraisal
+      tags: [HR]
+      responses:
+        '201':
+          description: Appraisal created
+  /employees:
+    get:
+      summary: Get all employees
+      tags: [HR]
+      parameters:
+        - name: department
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Employees
+    post:
+      summary: Create employee
+      tags: [HR]
+      responses:
+        '201':
+          description: Employee created
+  /employees/{id}:
+    put:
+      summary: Update employee
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Employee updated
+    delete:
+      summary: Delete employee
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Employee deleted
+  /employees/import:
+    post:
+      summary: Import employees
+      tags: [HR]
+      responses:
+        '200':
+          description: Import completed
+  /shifts:
+    get:
+      summary: Get all shifts
+      tags: [HR]
+      responses:
+        '200':
+          description: Shifts
+    post:
+      summary: Create shift
+      tags: [HR]
+      responses:
+        '201':
+          description: Shift created
+  /shifts/{id}:
+    delete:
+      summary: Delete shift
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Shift deleted
+  /shift-assignments:
+    get:
+      summary: Get shift assignments
+      tags: [HR]
+      parameters:
+        - name: employeeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Shift assignments
+    post:
+      summary: Create shift assignment
+      tags: [HR]
+      responses:
+        '201':
+          description: Assignment created
+  /performance/targets:
+    get:
+      summary: Get performance targets
+      tags: [HR]
+      parameters:
+        - name: employeeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Performance targets
+    post:
+      summary: Create performance target
+      tags: [HR]
+      responses:
+        '201':
+          description: Target created
+  /performance/targets/{id}/submit:
+    put:
+      summary: Submit performance target
+      tags: [HR]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Target submitted
+  /payroll:
+    get:
+      summary: Get payroll
+      tags: [HR]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payroll data
+  /payroll/generate:
+    post:
+      summary: Generate payroll
+      tags: [HR]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payroll generated
+  /finance/requests:
+    get:
+      summary: Get finance requests
+      tags: [Finance]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Finance requests
+    post:
+      summary: Create finance request
+      tags: [Finance]
+      responses:
+        '201':
+          description: Request created
+  /finance/requests/{id}/approve:
+    put:
+      summary: Approve finance request
+      tags: [Finance]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request approved
+  /finance/requests/{id}/reject:
+    put:
+      summary: Reject finance request
+      tags: [Finance]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request rejected
+  /tickets:
+    get:
+      summary: Get IT tickets
+      tags: [IT]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tickets
+    post:
+      summary: Create ticket
+      tags: [IT]
+      responses:
+        '201':
+          description: Ticket created
+  /tickets/{id}:
+    put:
+      summary: Update ticket
+      tags: [IT]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ticket updated
+    delete:
+      summary: Delete ticket
+      tags: [IT]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Ticket deleted
+  /it/queues:
+    get:
+      summary: Get IT queues
+      tags: [IT]
+      responses:
+        '200':
+          description: IT queues
+  /clients:
+    get:
+      summary: Get all clients
+      tags: [Operations]
+      responses:
+        '200':
+          description: Clients
+    post:
+      summary: Create client
+      tags: [Operations]
+      responses:
+        '201':
+          description: Client created
+  /clients/{id}:
+    put:
+      summary: Update client
+      tags: [Operations]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Client updated
+    delete:
+      summary: Delete client
+      tags: [Operations]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Client deleted
+  /conversations:
+    get:
+      summary: Get conversations
+      tags: [Operations]
+      parameters:
+        - name: client_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Conversations
+    post:
+      summary: Create conversation
+      tags: [Operations]
+      responses:
+        '201':
+          description: Conversation created
+  /notifications:
+    get:
+      summary: Get notifications
+      tags: [Notifications]
+      parameters:
+        - name: isRead
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Notifications
+  /notifications/{id}/read:
+    put:
+      summary: Mark notification as read
+      tags: [Notifications]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification marked as read
+  /notifications/read-all:
+    put:
+      summary: Mark all notifications as read
+      tags: [Notifications]
+      responses:
+        '200':
+          description: All notifications marked as read

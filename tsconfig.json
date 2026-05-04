@@ -3,6 +3,11 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@prisma/client": ["node_modules/.prisma/client"],
+      "@prisma/client/*": ["node_modules/.prisma/client/*"]
+    },
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": "src",
