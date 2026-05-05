@@ -346,7 +346,7 @@ export function buildV1Router(env: Env): Router {
   r.get("/reports/leave", requirePermission(Permission.REPORTING_READ), getLeaveReport);
 
   // Leave Management
-  r.get("/leave", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
+  r.get("/leave", requirePermission(Permission.HR_LEAVE_READ, Permission.SELF_LEAVE), getAllLeaves);
   r.get("/leave/types", requirePermission(Permission.SELF_LEAVE), getLeaveTypes);
   r.get("/leave/admin/all", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
   r.post("/leave", requirePermission(Permission.SELF_LEAVE), postLeaveRequest);

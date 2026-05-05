@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { WorkflowEngine } from "../services/workflowEngine.js";
 import { NotFoundError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { Permission, roleHasPermission } from "../config/permissions.js";
 
 /**
  * Admin: Get all leave requests with filters.
@@ -10,9 +11,17 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 export const getAllLeaves = asyncHandler(async (req: Request, res: Response) => {
   const { employeeId, status, leaveTypeId } = req.query;
 
+  // RBAC: If user doesn't have HR_LEAVE_READ, they can only see their own leaves
+  const roles = req.appRoles || [];
+  const canReadAll = roles.some(role => roleHasPermission(role, Permission.HR_LEAVE_READ));
+  
+  const targetUserId = canReadAll 
+     ? (employeeId ? (employeeId as string) : undefined) 
+     : req.userId;
+
   const items = await prisma.leaveRequest.findMany({
     where: {
-      ...(employeeId && { userId: employeeId as string }),
+      ...(targetUserId && { userId: targetUserId }),
       ...(leaveTypeId && { leaveTypeId: leaveTypeId as string }),
       ...(status && {
         workflowInstance: {
