@@ -118,8 +118,21 @@ export const returnLeave = asyncHandler(async (req: Request, res: Response) => {
   res.json({ message: "Leave returned" });
 });
 
-export const updateLeave = asyncHandler(async (_req: Request, res: Response) => {
-  res.status(501).json({ error: "Not implemented" });
+export const updateLeave = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const { startDate, endDate, workingDays, reason } = req.body;
+
+  const leave = await prisma.leaveRequest.update({
+    where: { id },
+    data: {
+      ...(startDate && { startDate: new Date(startDate) }),
+      ...(endDate && { endDate: new Date(endDate) }),
+      ...(workingDays && { workingDays }),
+      ...(reason && { reason }),
+    },
+  });
+
+  res.json({ leave });
 });
 
 export const deleteLeave = asyncHandler(async (req: Request, res: Response) => {
