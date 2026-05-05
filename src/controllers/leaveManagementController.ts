@@ -1,20 +1,8 @@
 import { Request, Response } from "express";
-import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { WorkflowEngine } from "../services/workflowEngine.js";
-import { NotFoundError, UnauthorizedError } from "../lib/errors.js";
-import { appendAuditLog } from "../middleware/auditMiddleware.js";
-import { NotificationService } from "../services/notification/NotificationService.js";
+import { NotFoundError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
-
-const leaveSchema = z.object({
-  leaveTypeId: z.string().uuid(),
-  startDate: z.string(),
-  endDate: z.string(),
-  workingDays: z.coerce.number().positive(),
-  reason: z.string().optional(),
-});
 
 /**
  * Admin: Get all leave requests with filters.
@@ -128,70 +116,6 @@ export const returnLeave = asyncHandler(async (req: Request, res: Response) => {
   });
 
   res.json({ message: "Leave returned" });
-});
-
-/**
- * Create a new leave request.
- */
-export const createLeave = asyncHandler(async (req: Request, res: Response) => {
-  const body = leaveSchema.parse(req.body);
-  if (!req.userId) {
-    throw new UnauthorizedError("User not provisioned");
-  }
-
-  const wf = await prisma.workflowInstance.create({
-    data: {
-      module: "HR_LEAVE",
-      entityType: "LeaveRequest",
-      entityId: randomUUID(),
-      currentState: "DRAFT",
-      metadata: {},
-    },
-  });
-
-  const leave = await prisma.leaveRequest.create({
-    data: {
-      userId: req.userId,
-      leaveTypeId: body.leaveTypeId,
-      workflowInstanceId: wf.id,
-      startDate: new Date(body.startDate),
-      endDate: new Date(body.endDate),
-      workingDays: body.workingDays,
-      reason: body.reason,
-    },
-  });
-
-  await prisma.workflowInstance.update({
-    where: { id: wf.id },
-    data: { entityId: leave.id },
-  });
-
-  const engine = new WorkflowEngine(prisma);
-  await engine.transition(req, { workflowId: wf.id, to: "SUBMITTED", comment: "Employee submitted" });
-  await engine.transition(req, {
-    workflowId: wf.id,
-    to: "PENDING_APPROVAL",
-    routingStep: "SUPERVISOR",
-  });
-
-  const notifier = NotificationService.createDefault();
-  const channels = await notifier.channelsForRole("MANAGER", "WORKFLOW_APPROVAL_REQUIRED");
-  await notifier.dispatchForEvent(
-    {
-      eventType: "WORKFLOW_APPROVAL_REQUIRED",
-      payload: { title: "Leave approval", body: `Request ${leave.id}`, leaveRequestId: leave.id },
-    },
-    channels,
-  );
-
-  await appendAuditLog(req, {
-    action: "leave.create",
-    resourceType: "LeaveRequest",
-    resourceId: leave.id,
-    after: { workflowId: wf.id },
-  });
-
-  res.status(201).json({ leave, workflowId: wf.id });
 });
 
 export const updateLeave = asyncHandler(async (_req: Request, res: Response) => {

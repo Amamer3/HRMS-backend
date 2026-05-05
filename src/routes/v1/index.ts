@@ -17,13 +17,13 @@ import {
   listMyLeaves, 
   postLeaveRequest,
   getMyLeaveBalances,
+  getLeaveTypes,
 } from "../../controllers/leaveController.js";
 import { getHealth } from "../../controllers/healthController.js";
 import { getSummary, getAttendanceReport, getLeaveReport } from "../../controllers/reportController.js";
 import { 
   getAllLeaves, 
   getPendingDashboard, 
-  createLeave, 
   updateLeave, 
   deleteLeave, 
   approveLEave, 
@@ -347,8 +347,9 @@ export function buildV1Router(env: Env): Router {
 
   // Leave Management
   r.get("/leave", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
+  r.get("/leave/types", requirePermission(Permission.SELF_LEAVE), getLeaveTypes);
   r.get("/leave/admin/all", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
-  r.post("/leave", requirePermission(Permission.SELF_LEAVE), createLeave);
+  r.post("/leave", requirePermission(Permission.SELF_LEAVE), postLeaveRequest);
   r.get("/leave/pending-dashboard", requirePermission(Permission.HR_LEAVE_APPROVE), getPendingDashboard);
   r.put("/leave/:id", requirePermission(Permission.SELF_LEAVE), updateLeave);
   r.delete("/leave/:id", requirePermission(Permission.SELF_LEAVE), deleteLeave);

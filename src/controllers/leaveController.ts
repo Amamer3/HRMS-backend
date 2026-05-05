@@ -120,3 +120,8 @@ export const getMyLeaveBalances = asyncHandler(async (req: Request, res: Respons
 
   res.json({ items: balances });
 });
+
+export const getLeaveTypes = asyncHandler(async (req: Request, res: Response) => {
+  const items = await prisma.leaveType.findMany();
+  res.json({ items });
+});
