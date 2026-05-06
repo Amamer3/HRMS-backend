@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { WorkflowEngine } from "../services/workflowEngine.js";
-import { NotFoundError } from "../lib/errors.js";
+import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { Permission, roleHasPermission } from "../config/permissions.js";
 
@@ -66,6 +66,10 @@ export const getPendingDashboard = asyncHandler(async (_req: Request, res: Respo
  */
 export const approveLEave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
+  const comment =
+    typeof req.body?.comment === "string" && req.body.comment.trim().length > 0
+      ? req.body.comment
+      : undefined;
   const leave = await prisma.leaveRequest.findUnique({
     where: { id },
     include: { workflowInstance: true },
@@ -73,14 +77,36 @@ export const approveLEave = asyncHandler(async (req: Request, res: Response) => 
 
   if (!leave) throw new NotFoundError("Leave request not found");
 
+  const currentState = leave.workflowInstance.currentState;
   const engine = new WorkflowEngine(prisma);
-  await engine.transition(req, {
-    workflowId: leave.workflowInstanceId,
-    to: "COMPLETED",
-    comment: req.body.comment || "Approved by admin",
-  });
 
-  res.json({ message: "Leave approved" });
+  if (currentState === "COMPLETED" || currentState === "CLOSED") {
+    return res.json({ message: "Leave already approved" });
+  }
+
+  if (currentState === "PENDING_APPROVAL") {
+    await engine.transition(req, {
+      workflowId: leave.workflowInstanceId,
+      to: "IN_PROGRESS",
+    });
+    await engine.transition(req, {
+      workflowId: leave.workflowInstanceId,
+      to: "COMPLETED",
+      comment,
+    });
+    return res.json({ message: "Leave approved" });
+  }
+
+  if (currentState === "IN_PROGRESS") {
+    await engine.transition(req, {
+      workflowId: leave.workflowInstanceId,
+      to: "COMPLETED",
+      comment,
+    });
+    return res.json({ message: "Leave approved" });
+  }
+
+  throw new ConflictError(`Leave cannot be approved from ${currentState} state`);
 });
 
 /**
@@ -88,6 +114,10 @@ export const approveLEave = asyncHandler(async (req: Request, res: Response) => 
  */
 export const rejectLeave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
+  const comment =
+    typeof req.body?.comment === "string" && req.body.comment.trim().length > 0
+      ? req.body.comment
+      : "Rejected by admin";
   const leave = await prisma.leaveRequest.findUnique({
     where: { id },
     include: { workflowInstance: true },
@@ -95,11 +125,16 @@ export const rejectLeave = asyncHandler(async (req: Request, res: Response) => {
 
   if (!leave) throw new NotFoundError("Leave request not found");
 
+  const currentState = leave.workflowInstance.currentState;
+  if (currentState !== "PENDING_APPROVAL") {
+    throw new ConflictError(`Leave cannot be rejected from ${currentState} state`);
+  }
+
   const engine = new WorkflowEngine(prisma);
   await engine.transition(req, {
     workflowId: leave.workflowInstanceId,
     to: "REJECTED",
-    comment: req.body.comment || "Rejected by admin",
+    comment,
   });
 
   res.json({ message: "Leave rejected" });
@@ -110,6 +145,10 @@ export const rejectLeave = asyncHandler(async (req: Request, res: Response) => {
  */
 export const returnLeave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
+  const comment =
+    typeof req.body?.comment === "string" && req.body.comment.trim().length > 0
+      ? req.body.comment
+      : "Returned for clarification";
   const leave = await prisma.leaveRequest.findUnique({
     where: { id },
     include: { workflowInstance: true },
@@ -117,11 +156,16 @@ export const returnLeave = asyncHandler(async (req: Request, res: Response) => {
 
   if (!leave) throw new NotFoundError("Leave request not found");
 
+  const currentState = leave.workflowInstance.currentState;
+  if (!["PENDING_APPROVAL", "IN_PROGRESS", "PENDING_REQUESTER_CONFIRMATION"].includes(currentState)) {
+    throw new ConflictError(`Leave cannot be returned from ${currentState} state`);
+  }
+
   const engine = new WorkflowEngine(prisma);
   await engine.transition(req, {
     workflowId: leave.workflowInstanceId,
     to: "RETURNED",
-    comment: req.body.comment || "Returned for clarification",
+    comment,
   });
 
   res.json({ message: "Leave returned" });

@@ -348,6 +348,9 @@ export function buildV1Router(env: Env): Router {
   // Leave Management
   r.get("/leave", requirePermission(Permission.HR_LEAVE_READ, Permission.SELF_LEAVE), getAllLeaves);
   r.get("/leave/types", requirePermission(Permission.SELF_LEAVE), getLeaveTypes);
+  // Backward-compatible aliases used by some frontend variants.
+  r.get("/leave/type", requirePermission(Permission.SELF_LEAVE), getLeaveTypes);
+  r.get("/leave-types", requirePermission(Permission.SELF_LEAVE), getLeaveTypes);
   r.get("/leave/admin/all", requirePermission(Permission.HR_LEAVE_READ), getAllLeaves);
   r.post("/leave", requirePermission(Permission.SELF_LEAVE), postLeaveRequest);
   r.get("/leave/pending-dashboard", requirePermission(Permission.HR_LEAVE_APPROVE), getPendingDashboard);
