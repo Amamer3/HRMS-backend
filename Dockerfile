@@ -6,6 +6,7 @@ COPY package.json package-lock.json* ./
 RUN apk update && apk upgrade --no-cache && npm ci
 
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY docs ./docs
@@ -27,6 +28,7 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/prisma.config.ts ./
 COPY --from=build /app/docs ./docs
 COPY scripts ./scripts
 

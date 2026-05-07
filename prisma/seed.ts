@@ -38,7 +38,7 @@ async function main() {
     {
       code: "ANNUAL_LEAVE",
       name: "Annual Leave",
-      maxDaysPerYear: 21,
+      maxDaysPerYear: 15,
       allowCarryForward: true,
       requiresMedical: false,
       approvalChain: ["SUPERVISOR", "HR"],

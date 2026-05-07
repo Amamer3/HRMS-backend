@@ -7,6 +7,10 @@ import { appendAuditLog } from "../middleware/auditMiddleware.js";
 import { NotificationService } from "../services/notification/NotificationService.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { UnauthorizedError } from "../lib/errors.js";
+import {
+  assertLeaveBalanceCoversRequest,
+  seedYearlyLeaveBalancesForUser,
+} from "../services/leaveBalanceService.js";
 
 const createLeave = z.object({
   leaveTypeId: z.string().uuid(),
@@ -24,6 +28,13 @@ export const postLeaveRequest = asyncHandler(async (req: Request, res: Response)
   if (!req.userId) {
     throw new UnauthorizedError("User not provisioned");
   }
+
+  await assertLeaveBalanceCoversRequest(prisma, {
+    userId: req.userId,
+    leaveTypeId: body.leaveTypeId,
+    startDate: new Date(body.startDate),
+    workingDays: body.workingDays,
+  });
 
   const wf = await prisma.workflowInstance.create({
     data: {
@@ -102,6 +113,8 @@ export const getMyLeaveBalances = asyncHandler(async (req: Request, res: Respons
 
   const year = Number(req.query.year) || new Date().getUTCFullYear();
 
+  await seedYearlyLeaveBalancesForUser(prisma, req.userId, year);
+
   const balances = await prisma.leaveBalance.findMany({
     where: {
       userId: req.userId,
@@ -112,13 +125,37 @@ export const getMyLeaveBalances = asyncHandler(async (req: Request, res: Respons
         select: {
           id: true,
           name: true,
-          code: true
+          code: true,
+          maxDaysPerYear: true,
         }
       }
     }
   });
 
-  res.json({ items: balances });
+  const items = balances.map((b) => {
+    const allocatedDays =
+      b.leaveType.maxDaysPerYear?.toNumber() ?? b.openingBalanceDays.toNumber();
+    const remainingDays = b.openingBalanceDays
+      .plus(b.accruedDays)
+      .plus(b.adjustedDays)
+      .minus(b.usedDays)
+      .toNumber();
+    return {
+      id: b.id,
+      userId: b.userId,
+      leaveTypeId: b.leaveTypeId,
+      year: b.year,
+      leaveType: b.leaveType,
+      openingBalanceDays: b.openingBalanceDays.toNumber(),
+      accruedDays: b.accruedDays.toNumber(),
+      usedDays: b.usedDays.toNumber(),
+      adjustedDays: b.adjustedDays.toNumber(),
+      allocatedDays,
+      remainingDays,
+    };
+  });
+
+  res.json({ items });
 });
 
 export const getLeaveTypes = asyncHandler(async (_req: Request, res: Response) => {

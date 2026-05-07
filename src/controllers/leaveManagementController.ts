@@ -4,6 +4,7 @@ import { WorkflowEngine } from "../services/workflowEngine.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { Permission, roleHasPermission } from "../config/permissions.js";
+import { debitLeaveBalanceOnApproval } from "../services/leaveBalanceService.js";
 
 /**
  * Admin: Get all leave requests with filters.
@@ -94,6 +95,7 @@ export const approveLEave = asyncHandler(async (req: Request, res: Response) => 
       to: "COMPLETED",
       comment,
     });
+    await debitLeaveBalanceOnApproval(prisma, leave.id);
     return res.json({ message: "Leave approved" });
   }
 
@@ -103,6 +105,7 @@ export const approveLEave = asyncHandler(async (req: Request, res: Response) => 
       to: "COMPLETED",
       comment,
     });
+    await debitLeaveBalanceOnApproval(prisma, leave.id);
     return res.json({ message: "Leave approved" });
   }
 

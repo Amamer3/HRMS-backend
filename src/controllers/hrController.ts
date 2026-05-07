@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { seedYearlyLeaveBalancesForUser } from "../services/leaveBalanceService.js";
 
 // Employees
 export const getEmployees = asyncHandler(async (req: Request, res: Response) => {
@@ -36,6 +37,8 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
       isActive: true,
     },
   });
+
+  await seedYearlyLeaveBalancesForUser(prisma, employee.id);
 
   res.status(201).json(employee);
 });
