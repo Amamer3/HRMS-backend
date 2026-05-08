@@ -2,6 +2,9 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
+# prisma.config.ts requires DATABASE_URL when Prisma loads the config; generate only reads the schema.
+ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build"
+
 COPY package.json package-lock.json* ./
 RUN apk update && apk upgrade --no-cache && npm ci
 

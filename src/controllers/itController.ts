@@ -1,19 +1,37 @@
 import { Request, Response } from "express";
+import { TicketPriority, WorkflowState } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 
+function parseWorkflowState(raw: unknown): WorkflowState | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const v = String(raw).toUpperCase();
+  return (Object.values(WorkflowState) as string[]).includes(v)
+    ? (v as WorkflowState)
+    : undefined;
+}
+
+function parseTicketPriority(raw: unknown): TicketPriority | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const v = String(raw).toUpperCase();
+  return (Object.values(TicketPriority) as string[]).includes(v)
+    ? (v as TicketPriority)
+    : undefined;
+}
+
 export const getTickets = asyncHandler(async (req: Request, res: Response) => {
-  const { status, priority } = req.query;
-  
+  const stateFilter = parseWorkflowState(req.query.status);
+  const priorityFilter = parseTicketPriority(req.query.priority);
+
   const allTickets = await prisma.itTicket.findMany({
     where: {
-      ...(status && { 
-        workflowInstance: { 
-          currentState: String(status).toUpperCase() as any 
-        } 
+      ...(stateFilter !== undefined && {
+        workflowInstance: {
+          currentState: stateFilter,
+        },
       }),
-      ...(priority && { 
-        priority: String(priority).toUpperCase() as any 
+      ...(priorityFilter !== undefined && {
+        priority: priorityFilter,
       }),
     },
     include: {
@@ -39,7 +57,7 @@ export const createTicket = asyncHandler(async (req: Request, res: Response) => 
       module: "IT_TICKET",
       entityType: "ItTicket",
       entityId: "00000000-0000-0000-0000-000000000000", // Temp ID
-      currentState: "OPEN" as any,
+      currentState: WorkflowState.OPEN,
       ownedByUserId: req.userId,
     },
   });

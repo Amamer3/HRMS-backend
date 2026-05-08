@@ -1,20 +1,17 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, WorkflowModule, WorkflowState } from "@prisma/client";
 import { appendAuditLog } from "../middleware/auditMiddleware.js";
 import type { Request } from "express";
 
-/** Inferred from the client delegate — avoids importing enum types that some TS setups fail to resolve from `@prisma/client`. */
-type WorkflowRow = NonNullable<Awaited<ReturnType<PrismaClient["workflowInstance"]["findFirst"]>>>;
-type WorkflowModule = WorkflowRow["module"];
-type WorkflowState = WorkflowRow["currentState"];
+/** Transitions keyed by workflow state; `OPEN` is listed explicitly so typings stay valid across Prisma client versions. */
+type PerModuleTransitions = Partial<Record<WorkflowState, WorkflowState[]>> & {
+  OPEN?: WorkflowState[];
+};
 
 /**
  * Configurable transitions per module. Extend with DB-driven rules later without redesign (NFR-10/11).
  * States align with SRS: Draft → Submitted → … (+ Rejected, Cancelled, On Hold, Returned).
  */
-const TRANSITIONS: Partial<Record<
-  WorkflowModule,
-  Partial<Record<WorkflowState, WorkflowState[]>>
->> = {
+const TRANSITIONS: Partial<Record<WorkflowModule, PerModuleTransitions>> = {
   HR_LEAVE: {
     DRAFT: ["SUBMITTED", "CANCELLED"],
     SUBMITTED: ["PENDING_APPROVAL", "RETURNED", "CANCELLED"],
@@ -43,6 +40,7 @@ const TRANSITIONS: Partial<Record<
   },
   IT_TICKET: {
     DRAFT: ["SUBMITTED", "CANCELLED"],
+    OPEN: ["IN_PROGRESS", "CLOSED", "CANCELLED", "ON_HOLD"],
     SUBMITTED: ["IN_PROGRESS", "PENDING_APPROVAL"],
     PENDING_APPROVAL: ["IN_PROGRESS", "REJECTED"],
     IN_PROGRESS: ["COMPLETED", "ON_HOLD", "PENDING_REQUESTER_CONFIRMATION"],

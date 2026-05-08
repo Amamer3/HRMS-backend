@@ -165,6 +165,7 @@ enum WorkflowModule {
 
 enum WorkflowState {
   DRAFT
+  OPEN
   SUBMITTED
   PENDING_APPROVAL
   IN_PROGRESS
