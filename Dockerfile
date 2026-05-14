@@ -27,17 +27,15 @@ RUN apk update && apk upgrade --no-cache && \
     addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-COPY --from=build /app/package.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/prisma.config.ts ./
-COPY --from=build /app/docs ./docs
-COPY scripts ./scripts
+COPY --from=build --chown=nodejs:nodejs /app/package.json ./
+COPY --from=build --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=build --chown=nodejs:nodejs /app/prisma ./prisma
+COPY --from=build --chown=nodejs:nodejs /app/prisma.config.ts ./
+COPY --from=build --chown=nodejs:nodejs /app/docs ./docs
+COPY --chown=nodejs:nodejs scripts ./scripts
 
-# Ensure scripts are executable and owned by nodejs user
-RUN chmod +x ./scripts/start.sh && \
-    chown -R nodejs:nodejs /app
+RUN chmod +x ./scripts/start.sh
 
 USER nodejs
 EXPOSE 4000

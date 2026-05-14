@@ -3,6 +3,7 @@ services:
     name: echt-hr-api
     runtime: docker
     plan: free
+    port: 4000
     envVars:
       - key: NODE_ENV
         value: production
