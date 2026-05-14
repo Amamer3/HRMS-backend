@@ -1,5 +1,4 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import { getMe } from "../../controllers/meController.js";
 import { getAuditLogs } from "../../controllers/auditController.js";
 import {
@@ -85,28 +84,11 @@ import {
 } from "../../controllers/notificationsController.js";
 import { Permission } from "../../config/permissions.js";
 import { requirePermission, requireHrSensitiveAttendance } from "../../middleware/requireRole.js";
-import { buildAuthRouter, logout } from "../../controllers/authController.js";
+import { logout } from "../../controllers/authController.js";
 import type { Env } from "../../config/env.js";
 
-// Rate limiter for authentication endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "too_many_requests", message: "Too many requests, please try again later" },
-});
-
-// Stricter limiter for token exchange (prevents code brute-forcing)
-const tokenLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "too_many_requests", message: "Too many token requests, please try again later" },
-});
-
-export function buildV1Router(env: Env): Router {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function buildV1Router(_env: Env): Router {
   const r = Router();
 
   r.get("/health", getHealth);
@@ -117,13 +99,8 @@ export function buildV1Router(env: Env): Router {
   r.post("/admin/bootstrap", bootstrapSuperAdmin);
 
   // ============================================================
-  // AUTH — delegated to authController
+  // AUTH — /auth/azure/* is mounted directly on the app (see app.ts)
   // ============================================================
-  const azureRouter = buildAuthRouter(env);
-  r.use("/auth/azure", authLimiter, azureRouter);
-  // /auth/azure/token gets an additional stricter window on top of authLimiter
-  r.use("/auth/azure/token", tokenLimiter);
-
   r.get("/auth/me", getMe);
   r.post("/auth/logout", logout);
   r.post("/auth/refresh", requirePermission(Permission.SELF_PROFILE), (_req, res) => {
