@@ -45,10 +45,18 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
 
 export const updateEmployee = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  
+  const { email, displayName, jobTitle, departmentId, primaryBranchId, isActive } = req.body;
+
   const employee = await prisma.user.update({
     where: { id },
-    data: req.body,
+    data: {
+      ...(email !== undefined && { email }),
+      ...(displayName !== undefined && { displayName }),
+      ...(jobTitle !== undefined && { jobTitle }),
+      ...(departmentId !== undefined && { departmentId }),
+      ...(primaryBranchId !== undefined && { primaryBranchId }),
+      ...(isActive !== undefined && { isActive }),
+    },
   });
 
   res.json(employee);
@@ -76,17 +84,39 @@ export const getBranches = asyncHandler(async (_req: Request, res: Response) => 
 });
 
 export const createBranch = asyncHandler(async (req: Request, res: Response) => {
+  const { code, name, latitude, longitude, timezone, workdayStartLocal, workdayEndLocal, geofenceRadiusM, lateGraceMinutes } = req.body;
   const branch = await prisma.branch.create({
-    data: req.body,
+    data: {
+      code,
+      name,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
+      timezone: timezone || "Africa/Accra",
+      workdayStartLocal: workdayStartLocal || "08:00",
+      workdayEndLocal: workdayEndLocal || "17:00",
+      geofenceRadiusM: geofenceRadiusM || 30,
+      lateGraceMinutes: lateGraceMinutes || 10,
+    },
   });
   res.status(201).json(branch);
 });
 
 export const updateBranch = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
+  const { code, name, latitude, longitude, timezone, workdayStartLocal, workdayEndLocal, geofenceRadiusM, lateGraceMinutes } = req.body;
   const branch = await prisma.branch.update({
     where: { id },
-    data: req.body,
+    data: {
+      ...(code !== undefined && { code }),
+      ...(name !== undefined && { name }),
+      ...(latitude !== undefined && { latitude: parseFloat(latitude) }),
+      ...(longitude !== undefined && { longitude: parseFloat(longitude) }),
+      ...(timezone !== undefined && { timezone }),
+      ...(workdayStartLocal !== undefined && { workdayStartLocal }),
+      ...(workdayEndLocal !== undefined && { workdayEndLocal }),
+      ...(geofenceRadiusM !== undefined && { geofenceRadiusM }),
+      ...(lateGraceMinutes !== undefined && { lateGraceMinutes }),
+    },
   });
   res.json(branch);
 });

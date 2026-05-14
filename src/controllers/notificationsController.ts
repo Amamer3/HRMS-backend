@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { NotFoundError } from "../lib/errors.js";
 
 export const getNotifications = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
@@ -21,11 +22,13 @@ export const getNotifications = asyncHandler(async (req: Request, res: Response)
 
 export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
-  const notification = await prisma.inAppNotification.update({
-    where: { id },
+  const userId = req.userId!;
+  const result = await prisma.inAppNotification.updateMany({
+    where: { id, userId },
     data: { readAt: new Date() },
   });
-  res.json(notification);
+  if (result.count === 0) throw new NotFoundError("Notification not found");
+  res.json({ id, readAt: new Date() });
 });
 
 export const markAllAsRead = asyncHandler(async (req: Request, res: Response) => {

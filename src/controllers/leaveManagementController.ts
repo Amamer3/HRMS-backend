@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { WorkflowEngine } from "../services/workflowEngine.js";
-import { ConflictError, NotFoundError } from "../lib/errors.js";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { Permission, roleHasPermission } from "../config/permissions.js";
 import { debitLeaveBalanceOnApproval } from "../services/leaveBalanceService.js";
@@ -11,34 +11,39 @@ import { debitLeaveBalanceOnApproval } from "../services/leaveBalanceService.js"
  */
 export const getAllLeaves = asyncHandler(async (req: Request, res: Response) => {
   const { employeeId, status, leaveTypeId } = req.query;
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+  const skip = (page - 1) * limit;
 
-  // RBAC: If user doesn't have HR_LEAVE_READ, they can only see their own leaves
   const roles = req.appRoles || [];
   const canReadAll = roles.some(role => roleHasPermission(role, Permission.HR_LEAVE_READ));
-  
-  const targetUserId = canReadAll 
-     ? (employeeId ? (employeeId as string) : undefined) 
-     : req.userId;
 
-  const items = await prisma.leaveRequest.findMany({
-    where: {
-      ...(targetUserId && { userId: targetUserId }),
-      ...(leaveTypeId && { leaveTypeId: leaveTypeId as string }),
-      ...(status && {
-        workflowInstance: {
-          currentState: String(status).toUpperCase() as any,
-        },
-      }),
-    },
-    include: {
-      user: true,
-      leaveType: true,
-      workflowInstance: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const targetUserId = canReadAll
+    ? (employeeId ? (employeeId as string) : undefined)
+    : req.userId;
 
-  res.json({ items });
+  const where = {
+    ...(targetUserId && { userId: targetUserId }),
+    ...(leaveTypeId && { leaveTypeId: leaveTypeId as string }),
+    ...(status && {
+      workflowInstance: {
+        currentState: String(status).toUpperCase() as any,
+      },
+    }),
+  };
+
+  const [total, items] = await Promise.all([
+    prisma.leaveRequest.count({ where }),
+    prisma.leaveRequest.findMany({
+      where,
+      include: { user: true, leaveType: true, workflowInstance: true },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  res.json({ items, total, page, limit });
 });
 
 /**
@@ -65,7 +70,7 @@ export const getPendingDashboard = asyncHandler(async (_req: Request, res: Respo
 /**
  * Admin/Manager: Approve a leave request.
  */
-export const approveLEave = asyncHandler(async (req: Request, res: Response) => {
+export const approveLeave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const comment =
     typeof req.body?.comment === "string" && req.body.comment.trim().length > 0
@@ -178,21 +183,58 @@ export const updateLeave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const { startDate, endDate, workingDays, reason } = req.body;
 
-  const leave = await prisma.leaveRequest.update({
+  const leave = await prisma.leaveRequest.findUnique({
+    where: { id },
+    include: { workflowInstance: true },
+  });
+  if (!leave) throw new NotFoundError("Leave request not found");
+
+  const roles = req.appRoles ?? [];
+  const canManageAll = roles.some((r) => roleHasPermission(r, Permission.HR_LEAVE_WRITE));
+  if (!canManageAll && leave.userId !== req.userId) {
+    throw new ForbiddenError("You can only modify your own leave requests");
+  }
+
+  const editableStates = ["DRAFT", "RETURNED"];
+  if (!editableStates.includes(leave.workflowInstance.currentState)) {
+    throw new ConflictError(`Leave cannot be edited in ${leave.workflowInstance.currentState} state`);
+  }
+
+  const parsedStart = startDate ? new Date(startDate) : leave.startDate;
+  const parsedEnd = endDate ? new Date(endDate) : leave.endDate;
+  if (isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
+    throw new BadRequestError("Invalid date format");
+  }
+  if (parsedStart > parsedEnd) {
+    throw new BadRequestError("Start date must be on or before end date");
+  }
+
+  const updated = await prisma.leaveRequest.update({
     where: { id },
     data: {
-      ...(startDate && { startDate: new Date(startDate) }),
-      ...(endDate && { endDate: new Date(endDate) }),
-      ...(workingDays && { workingDays }),
-      ...(reason && { reason }),
+      ...(startDate && { startDate: parsedStart }),
+      ...(endDate && { endDate: parsedEnd }),
+      ...(workingDays !== undefined && { workingDays }),
+      ...(reason !== undefined && { reason }),
     },
   });
 
-  res.json({ leave });
+  res.json({ leave: updated });
 });
 
 export const deleteLeave = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
+
+  const leave = await prisma.leaveRequest.findUnique({
+    where: { id },
+    include: { workflowInstance: true },
+  });
+  if (!leave) throw new NotFoundError("Leave request not found");
+
+  if (leave.workflowInstance.currentState !== "DRAFT") {
+    throw new ConflictError("Only draft leave requests can be deleted");
+  }
+
   await prisma.leaveRequest.delete({ where: { id } });
   res.status(204).send();
 });
@@ -205,6 +247,12 @@ export const submitLeave = asyncHandler(async (req: Request, res: Response) => {
   });
 
   if (!leave) throw new NotFoundError("Leave request not found");
+
+  const roles = req.appRoles ?? [];
+  const canManageAll = roles.some((r) => roleHasPermission(r, Permission.HR_LEAVE_WRITE));
+  if (!canManageAll && leave.userId !== req.userId) {
+    throw new ForbiddenError("You can only submit your own leave requests");
+  }
 
   const engine = new WorkflowEngine(prisma);
   await engine.transition(req, {

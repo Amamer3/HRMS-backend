@@ -1,10 +1,34 @@
 import type { Request, Response } from "express";
-import crypto from "crypto";
-import jwt from "jsonwebtoken";
+import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import type { AppRole } from "@prisma/client";
 import { asyncHandler } from "../lib/asyncHandler.js";
-import { BadRequestError, ForbiddenError, NotFoundError, ConflictError, UnauthorizedError } from "../lib/errors.js";
+import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../lib/errors.js";
+
+const localTimeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+const createBranchBody = z.object({
+  code: z.string().min(1).max(20),
+  name: z.string().min(1).max(100),
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  timezone: z.string().default("Africa/Accra"),
+  workdayStartLocal: z.string().regex(localTimeRegex, "Must be HH:MM").default("08:00"),
+  workdayEndLocal: z.string().regex(localTimeRegex, "Must be HH:MM").default("17:00"),
+  geofenceRadiusM: z.coerce.number().int().min(1).max(10000).default(30),
+  lateGraceMinutes: z.coerce.number().int().min(0).max(120).default(10),
+});
+
+const updateBranchBody = z.object({
+  name: z.string().min(1).max(100).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  timezone: z.string().optional(),
+  workdayStartLocal: z.string().regex(localTimeRegex, "Must be HH:MM").optional(),
+  workdayEndLocal: z.string().regex(localTimeRegex, "Must be HH:MM").optional(),
+  geofenceRadiusM: z.coerce.number().int().min(1).max(10000).optional(),
+  lateGraceMinutes: z.coerce.number().int().min(0).max(120).optional(),
+});
 
 // ========================
 // BRANCHES
@@ -18,46 +42,18 @@ export const getBranches = asyncHandler(async (_req: Request, res: Response) => 
 });
 
 export const createBranch = asyncHandler(async (req: Request, res: Response) => {
-  const { code, name, latitude, longitude, timezone, workdayStartLocal, workdayEndLocal, geofenceRadiusM, lateGraceMinutes } = req.body;
+  const data = createBranchBody.parse(req.body);
 
-  if (!code || !name || latitude === undefined || longitude === undefined) {
-    throw new BadRequestError("Missing required fields: code, name, latitude, longitude");
-  }
-
-  const branch = await prisma.branch.create({
-    data: {
-      code,
-      name,
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
-      timezone: timezone || "Africa/Accra",
-      workdayStartLocal: workdayStartLocal || "08:00",
-      workdayEndLocal: workdayEndLocal || "17:00",
-      geofenceRadiusM: geofenceRadiusM || 30,
-      lateGraceMinutes: lateGraceMinutes || 10,
-    },
-  });
+  const branch = await prisma.branch.create({ data });
 
   res.status(201).json(branch);
 });
 
 export const updateBranch = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const { name, latitude, longitude, timezone, workdayStartLocal, workdayEndLocal, geofenceRadiusM, lateGraceMinutes } = req.body;
+  const data = updateBranchBody.parse(req.body);
 
-  const branch = await prisma.branch.update({
-    where: { id },
-    data: {
-      ...(name && { name }),
-      ...(latitude !== undefined && { latitude: parseFloat(latitude) }),
-      ...(longitude !== undefined && { longitude: parseFloat(longitude) }),
-      ...(timezone && { timezone }),
-      ...(workdayStartLocal && { workdayStartLocal }),
-      ...(workdayEndLocal && { workdayEndLocal }),
-      ...(geofenceRadiusM !== undefined && { geofenceRadiusM }),
-      ...(lateGraceMinutes !== undefined && { lateGraceMinutes }),
-    },
-  });
+  const branch = await prisma.branch.update({ where: { id }, data });
 
   res.json(branch);
 });
@@ -78,24 +74,29 @@ export const deleteBranch = asyncHandler(async (req: Request, res: Response) => 
 
 export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   const { departmentId, status } = req.query;
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+  const skip = (page - 1) * limit;
+
+  const where = {
+    ...(departmentId && { departmentId: departmentId as string }),
+    ...(status === "active" && { isActive: true }),
+    ...(status === "inactive" && { isActive: false }),
+  };
 
   const users = await prisma.user.findMany({
-    where: {
-      ...(departmentId && { departmentId: departmentId as string }),
-      ...(status === "active" && { isActive: true }),
-      ...(status === "inactive" && { isActive: false }),
-    },
+    where,
     include: {
       department: true,
       primaryBranch: true,
       rolesResolved: {
-        orderBy: {
-          syncedAt: "desc",
-        },
+        orderBy: { syncedAt: "desc" },
         take: 1,
       },
     },
     orderBy: { createdAt: "desc" },
+    skip,
+    take: limit,
   });
 
   // Map internal roles to frontend expected lowercase strings
@@ -107,12 +108,14 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
     READ_ONLY: "employee",
   };
 
-  res.json(users.map((u) => ({
+  const items = users.map(u => ({
     ...u,
     name: u.displayName,
-    role: roleMap[u.role] || "employee",
-    employee_id: u.entraObjectId, // Using Entra ID as staff ID placeholder
-  })));
+    role: roleMap[u.role] ?? "employee",
+    employee_id: u.entraObjectId,
+  }));
+
+  res.json({ items, page, limit });
 });
 
 export const updateUserRole = asyncHandler(async (req: Request, res: Response) => {
@@ -355,42 +358,6 @@ export const deleteEntraGroupRoleMapping = asyncHandler(async (req: Request, res
   });
 
   res.status(204).send();
-});
-
-/**
- * Logout endpoint - blacklists the current JWT token
- * POST /auth/logout
- */
-export const logout = asyncHandler(async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new BadRequestError("No token provided");
-  }
-
-  const token = authHeader.slice("Bearer ".length).trim();
-  const userId = req.userId;
-
-  if (!userId) {
-    throw new UnauthorizedError("User not authenticated");
-  }
-
-  // Decode token to get expiration time
-  const decoded = jwt.decode(token) as jwt.JwtPayload;
-  const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 3600000); // Default 1 hour
-
-  // Hash the token for storage
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
-  // Blacklist the token
-  await prisma.tokenBlacklist.create({
-    data: {
-      tokenHash,
-      userId,
-      expiresAt,
-    },
-  });
-
-  res.json({ message: "Logged out successfully" });
 });
 
 /**

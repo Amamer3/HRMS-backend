@@ -2,145 +2,127 @@ import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import jwksClient, { type SigningKey } from "jwks-rsa";
 import crypto from "crypto";
+import pino from "pino";
 import type { AppRole, EntraGroupRoleMap } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import type { Env } from "../config/env.js";
-// Cache for JWKS clients to avoid repeated OIDC discovery calls
-const jwksClients = new Map<string, any>();
+
+const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
+
+// Cache for JWKS clients — bounded to avoid unbounded growth
+const jwksClients = new Map<string, ReturnType<typeof jwksClient>>();
+
+// Role priority is a static constant; define once at module scope
+const ROLE_PRIORITY: Record<AppRole, number> = {
+  SUPER_ADMIN: 100,
+  HR_ADMIN: 80,
+  MANAGER: 60,
+  EMPLOYEE: 40,
+  READ_ONLY: 20,
+};
 
 function getJwksClientForIssuer(issuer: string) {
-  // Normalize issuer by removing trailing slash
   const cleanIssuer = issuer.endsWith("/") ? issuer.slice(0, -1) : issuer;
-  
+
   if (jwksClients.has(cleanIssuer)) {
-    return jwksClients.get(cleanIssuer);
+    return jwksClients.get(cleanIssuer)!;
   }
 
-  // Extract tenant ID (the UUID-like part) from the issuer URL
   const parts = cleanIssuer.split("/");
-  const tenantId = parts.find(p => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p));
-  
+  const tenantId = parts.find(p =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p),
+  );
+
   if (!tenantId) {
-    console.error(`Could not extract tenant ID from issuer: ${issuer}. Falling back to 'common'.`);
+    logger.warn({ issuer }, "Could not extract tenant ID from issuer, falling back to 'common'");
   }
 
   const isV2 = cleanIssuer.includes("/v2.0");
-  const targetTenant = tenantId || "common";
-  
-  // Microsoft v1.0 and v2.0 have different discovery paths
-  const jwksUri = isV2 
+  const targetTenant = tenantId ?? "common";
+  const jwksUri = isV2
     ? `https://login.microsoftonline.com/${targetTenant}/discovery/v2.0/keys`
     : `https://login.microsoftonline.com/${targetTenant}/discovery/keys`;
 
-  console.log(`Creating JWKS client for issuer: ${cleanIssuer} -> jwksUri: ${jwksUri}`);
+  const client = jwksClient({ jwksUri, cache: true, rateLimit: true });
 
-  const client = jwksClient({
-    jwksUri,
-    cache: true,
-    rateLimit: true,
-  });
+  // Evict oldest entry if cache grows beyond 20 issuers
+  if (jwksClients.size >= 20) {
+    const firstKey = jwksClients.keys().next().value;
+    if (firstKey) jwksClients.delete(firstKey);
+  }
 
   jwksClients.set(cleanIssuer, client);
   return client;
 }
 
 type AzureAdJwtPayload = jwt.JwtPayload & {
-  oid?: string; 
+  oid?: string;
   groups?: string[];
   roles?: string[];
   preferred_username?: string;
-  appid?: string; // For v1.0 tokens
-  azp?: string;   // For v2.0 tokens
+  appid?: string;
+  azp?: string;
 };
 
-/**
- * Validates Microsoft Entra ID access tokens (Bearer JWT).
- * No passwords in DB — identity is oid + email from token; roles from group claims + EntraGroupRoleMap.
- */
 export function createAuthMiddleware(env: Env) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    // Skip auth for public endpoints
     const publicPaths = [
-      '/health',
-      '/auth/azure/login',
-      '/auth/azure/token',
-      '/auth/azure/callback',
-      '/admin/bootstrap'
+      "/health",
+      "/auth/azure/login",
+      "/auth/azure/token",
+      "/auth/azure/callback",
+      "/admin/bootstrap",
     ];
 
-    if (publicPaths.includes(req.path) || publicPaths.some(path => req.originalUrl.startsWith(path))) {
+    if (
+      publicPaths.includes(req.path) ||
+      publicPaths.some(p => req.originalUrl.startsWith(p))
+    ) {
       return next();
     }
 
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) {
-      console.warn("Auth failed: Missing or malformed Bearer token", { 
-        path: req.path, 
-        hasHeader: !!header 
-      });
+      logger.warn({ path: req.path, hasHeader: !!header }, "Auth failed: missing or malformed Bearer token");
       res.status(401).json({ error: "unauthorized", message: "Missing bearer token" });
       return;
     }
     const token = header.slice("Bearer ".length).trim();
 
     try {
-      // 1. Decode token WITHOUT verification first to get the issuer (iss) and kid
-      const unverified = jwt.decode(token, { complete: true }) as { 
-        header: jwt.JwtHeader; 
-        payload: AzureAdJwtPayload 
+      const unverified = jwt.decode(token, { complete: true }) as {
+        header: jwt.JwtHeader;
+        payload: AzureAdJwtPayload;
       } | null;
 
-      if (!unverified || !unverified.payload.iss) {
+      if (!unverified?.payload.iss) {
         throw new Error("Invalid token format: missing issuer");
       }
 
       const issuer = unverified.payload.iss;
       const kid = unverified.header.kid;
+      if (!kid) throw new Error("JWT kid missing in header");
 
-      if (!kid) {
-        throw new Error("JWT kid missing in header");
-      }
-
-      // 2. Resolve the correct JWKS client based on the issuer
       const client = getJwksClientForIssuer(issuer);
 
-      // 3. Get the signing key dynamically
       const signingKey = await new Promise<string>((resolve, reject) => {
         client.getSigningKey(kid, (err: Error | null, key?: SigningKey) => {
           if (err) {
-            console.error(`Failed to get signing key for kid ${kid} from issuer ${issuer}:`, err.message);
             reject(err);
           } else {
             const pubKey = key?.getPublicKey();
-            if (pubKey) resolve(pubKey);
-            else reject(new Error("Unable to resolve signing key from JWKS"));
+            pubKey ? resolve(pubKey) : reject(new Error("Unable to resolve signing key from JWKS"));
           }
         });
       });
 
-      // 4. Verify signature using the resolved key
       const decoded = await new Promise<AzureAdJwtPayload>((resolve, reject) => {
-        jwt.verify(
-          token,
-          signingKey,
-          {
-            algorithms: ["RS256"],
-          },
-          (err: jwt.VerifyErrors | null, payload: any) => {
-            if (err) reject(err);
-            else resolve(payload as AzureAdJwtPayload);
-          },
-        );
+        jwt.verify(token, signingKey, { algorithms: ["RS256"] }, (err, payload) => {
+          err ? reject(err) : resolve(payload as AzureAdJwtPayload);
+        });
       });
 
-      console.log(`JWT verified for auth:`, {
-        path: req.path,
-        aud: decoded.aud,
-        iss: decoded.iss,
-        oid: decoded.oid ?? decoded.sub,
-      });
-
-      // 5. Validate Issuer
+      // Validate issuer
       const tenantId = env.AZURE_AD_TENANT_ID;
       const allowedIssuers = [
         env.AZURE_AD_ISSUER,
@@ -153,55 +135,50 @@ export function createAuthMiddleware(env: Env) {
       ];
 
       if (!allowedIssuers.includes(issuer)) {
-        console.warn("JWT issuer mismatch:", { received: issuer, allowed: allowedIssuers });
+        logger.warn({ received: issuer }, "JWT issuer mismatch");
         res.status(401).json({ error: "unauthorized", message: "Invalid token issuer" });
         return;
       }
 
-      // 6. Validate Audience
+      // Validate audience — only accept tokens issued for this API
       const aud = decoded.aud;
-      const allowedAudiences = [
-        env.AZURE_AD_AUDIENCE,
-        env.AZURE_AD_CLIENT_ID,
-        "00000003-0000-0000-c000-000000000000", // Microsoft Graph
-      ];
+      const allowedAudiences = [env.AZURE_AD_AUDIENCE, env.AZURE_AD_CLIENT_ID];
 
-      const isAudienceValid = Array.isArray(aud) 
+      const isAudienceValid = Array.isArray(aud)
         ? aud.some(a => allowedAudiences.includes(a))
-        : typeof aud === 'string' && allowedAudiences.includes(aud);
+        : typeof aud === "string" && allowedAudiences.includes(aud);
 
       if (!isAudienceValid) {
-        console.warn("JWT audience mismatch:", { received: aud, allowed: allowedAudiences });
+        logger.warn({ received: aud }, "JWT audience mismatch");
         res.status(401).json({ error: "unauthorized", message: "Invalid token audience" });
         return;
       }
 
-      // 7. Security Check: verify the Authorized Party (azp) or Client ID
+      // Validate authorized party
       const authorizedParty = decoded.azp ?? decoded.appid ?? decoded.aud;
-      if (authorizedParty !== env.AZURE_AD_CLIENT_ID && !allowedAudiences.includes(authorizedParty as string)) {
-        console.error("Token rejected: authorized party does not match our Client ID", {
-          expected: env.AZURE_AD_CLIENT_ID,
-          received: authorizedParty
-        });
+      if (
+        authorizedParty !== env.AZURE_AD_CLIENT_ID &&
+        !allowedAudiences.includes(authorizedParty as string)
+      ) {
+        logger.error({ received: authorizedParty }, "Token rejected: authorized party mismatch");
         res.status(401).json({ error: "unauthorized", message: "Token issued to unauthorized application" });
         return;
       }
 
-      // Check if token is blacklisted (user logged out)
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      const blacklistedToken = await prisma.tokenBlacklist.findUnique({
+      // Check token blacklist
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const blacklisted = await prisma.tokenBlacklist.findUnique({
         where: { tokenHash },
-        select: { id: true }
+        select: { id: true },
       });
-
-      if (blacklistedToken) {
+      if (blacklisted) {
         res.status(401).json({ error: "unauthorized", message: "Token has been revoked" });
         return;
       }
 
       const oid = decoded.oid ?? decoded.sub;
       if (!oid) {
-        res.status(401).json({ error: "unauthorized", message: "Token missing oid" });
+        res.status(401).json({ error: "unauthorized", message: "Token missing subject" });
         return;
       }
 
@@ -212,13 +189,10 @@ export function createAuthMiddleware(env: Env) {
 
       let roleSet = new Set<AppRole>(maps.map((m: EntraGroupRoleMap) => m.role));
 
-      // Bootstrap Mode: If no role mappings exist in the entire system, 
-      // the first person to log in gets SUPER_ADMIN for this session.
+      // Bootstrap: first login when no mappings exist gets SUPER_ADMIN for this session only
       if (roleSet.size === 0) {
         const totalMappings = await prisma.entraGroupRoleMap.count();
-        if (totalMappings === 0) {
-          roleSet.add("SUPER_ADMIN" as AppRole);
-        }
+        if (totalMappings === 0) roleSet.add("SUPER_ADMIN" as AppRole);
       }
 
       const email =
@@ -237,65 +211,66 @@ export function createAuthMiddleware(env: Env) {
       };
       req.appRoles = [...roleSet];
 
-      const displayName = typeof decoded.name === "string" ? decoded.name : email?.split("@")[0] ?? "User";
+      const displayName =
+        typeof decoded.name === "string" ? decoded.name : email?.split("@")[0] ?? "User";
       const userEmail = email ?? `${oid}@users.noaadomain.local`;
 
-      // Define role priority for merging
-      const rolePriority: Record<AppRole, number> = {
-        SUPER_ADMIN: 100,
-        HR_ADMIN: 80,
-        MANAGER: 60,
-        EMPLOYEE: 40,
-        READ_ONLY: 20,
-      };
+      // Determine highest-priority role from Entra groups
+      const groupRole = req.appRoles.includes("SUPER_ADMIN")
+        ? "SUPER_ADMIN"
+        : req.appRoles.includes("HR_ADMIN")
+          ? "HR_ADMIN"
+          : req.appRoles.includes("MANAGER")
+            ? "MANAGER"
+            : req.appRoles.includes("EMPLOYEE")
+              ? "EMPLOYEE"
+              : req.appRoles.length > 0
+                ? req.appRoles[0]
+                : "EMPLOYEE";
 
-      // Resolve the highest role from Entra groups
-      const groupRole = req.appRoles.includes("SUPER_ADMIN") ? "SUPER_ADMIN" 
-                      : req.appRoles.includes("HR_ADMIN") ? "HR_ADMIN"
-                      : req.appRoles.includes("MANAGER") ? "MANAGER"
-                      : req.appRoles.includes("EMPLOYEE") ? "EMPLOYEE"
-                      : req.appRoles.length > 0 ? req.appRoles[0]
-                      : "EMPLOYEE";
-
-      // Fetch existing user to check for manual role overrides
+      // Fetch existing user — only write to DB when something actually changed
       const existingUser = await prisma.user.findUnique({
         where: { entraObjectId: oid },
-        select: { role: true },
+        select: { id: true, role: true, email: true, displayName: true },
       });
 
-      // Determine final role: Higher priority wins
       let finalRole = groupRole as AppRole;
       if (existingUser?.role) {
-        const currentPriority = rolePriority[existingUser.role] || 0;
-        const resolvedPriority = rolePriority[finalRole] || 0;
-        
-        // If current DB role is higher priority, keep it (manual override)
-        if (currentPriority > resolvedPriority) {
-          finalRole = existingUser.role;
-        }
+        const currentPriority = ROLE_PRIORITY[existingUser.role] ?? 0;
+        const resolvedPriority = ROLE_PRIORITY[finalRole] ?? 0;
+        if (currentPriority > resolvedPriority) finalRole = existingUser.role;
       }
 
-      // Database registration: Always upsert the user record on login.
-      const user = await prisma.user.upsert({
-        where: { entraObjectId: oid },
-        create: {
-          entraObjectId: oid,
-          email: userEmail,
-          displayName,
-          lastGroupSyncAt: new Date(),
-          isActive: true,
-          role: finalRole,
-        },
-        update: {
-          email: userEmail,
-          displayName,
-          lastGroupSyncAt: new Date(),
-          role: finalRole,
-        },
-        select: { id: true, role: true },
-      });
+      let user: { id: string; role: AppRole };
 
-      // Final session roles: Unique set of group roles + persistent DB role
+      if (!existingUser) {
+        // First login — create user record
+        user = await prisma.user.create({
+          data: {
+            entraObjectId: oid,
+            email: userEmail,
+            displayName,
+            lastGroupSyncAt: new Date(),
+            isActive: true,
+            role: finalRole,
+          },
+          select: { id: true, role: true },
+        });
+      } else if (
+        existingUser.role !== finalRole ||
+        existingUser.email !== userEmail ||
+        existingUser.displayName !== displayName
+      ) {
+        // Only write when something actually changed
+        user = await prisma.user.update({
+          where: { entraObjectId: oid },
+          data: { email: userEmail, displayName, lastGroupSyncAt: new Date(), role: finalRole },
+          select: { id: true, role: true },
+        });
+      } else {
+        user = { id: existingUser.id, role: existingUser.role };
+      }
+
       roleSet.add(user.role);
       req.appRoles = [...roleSet];
       req.userId = user.id;
@@ -303,12 +278,9 @@ export function createAuthMiddleware(env: Env) {
       next();
     } catch (err) {
       const error = err as Error;
-      console.error("JWT verification failed:", {
-        message: error.message,
-        stack: error.stack,
-        token_preview: token.substring(0, 20) + "..."
-      });
-      res.status(401).json({ error: "unauthorized", message: "Invalid or expired token", detail: error.message });
+      logger.error({ message: error.message, path: req.path }, "JWT verification failed");
+      // Never expose internal error details to the client
+      res.status(401).json({ error: "unauthorized", message: "Invalid or expired token" });
     }
   };
 }

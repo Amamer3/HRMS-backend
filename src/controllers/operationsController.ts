@@ -26,9 +26,13 @@ export const createClient = asyncHandler(async (req: Request, res: Response) => 
 
 export const updateClient = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
+  const { name, code } = req.body;
   const client = await prisma.clientAccount.update({
     where: { id },
-    data: req.body,
+    data: {
+      ...(name !== undefined && { name }),
+      ...(code !== undefined && { code }),
+    },
   });
   res.json(client);
 });

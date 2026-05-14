@@ -183,5 +183,5 @@ export async function debitLeaveBalanceOnApproval(
         note: "Approved leave request",
       },
     });
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

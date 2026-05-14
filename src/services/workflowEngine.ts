@@ -1,5 +1,6 @@
 import type { PrismaClient, WorkflowModule, WorkflowState } from "@prisma/client";
 import { appendAuditLog } from "../middleware/auditMiddleware.js";
+import { AppError, ErrorCode } from "../lib/errors.js";
 import type { Request } from "express";
 
 /** Transitions keyed by workflow state; `OPEN` is listed explicitly so typings stay valid across Prisma client versions. */
@@ -19,7 +20,7 @@ const TRANSITIONS: Partial<Record<WorkflowModule, PerModuleTransitions>> = {
     IN_PROGRESS: ["COMPLETED", "ON_HOLD", "RETURNED"],
     COMPLETED: ["PENDING_REQUESTER_CONFIRMATION"],
     PENDING_REQUESTER_CONFIRMATION: ["CLOSED", "RETURNED"],
-    CLOSED: [],
+    CLOSED: [], 
     REJECTED: [],
     CANCELLED: [],
     ON_HOLD: ["PENDING_APPROVAL", "IN_PROGRESS"],
@@ -115,7 +116,11 @@ export class WorkflowEngine {
 
     const allowed = this.allowedNextStates(wf.module, wf.currentState);
     if (!allowed.includes(input.to)) {
-      throw Object.assign(new Error("Illegal transition"), { code: "WORKFLOW_ILLEGAL_TRANSITION" });
+      throw new AppError(
+        ErrorCode.WORKFLOW_ERROR,
+        `Illegal workflow transition: ${wf.currentState} → ${input.to}`,
+        409,
+      );
     }
 
     const from = wf.currentState;
