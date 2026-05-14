@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Response as ExpressResponse } from "express";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import pino from "pino";
@@ -7,6 +8,23 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { BadRequestError, UnauthorizedError } from "../lib/errors.js";
 import { storeOAuthState, consumeOAuthState } from "../lib/oauthState.js";
 import type { Env } from "../config/env.js";
+
+const SESSION_COOKIE = "hr_session";
+const IS_PROD = process.env.NODE_ENV === "production";
+
+function setSessionCookie(res: ExpressResponse, token: string, expiresIn: number): void {
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: "lax",
+    maxAge: expiresIn * 1000,
+    path: "/",
+  });
+}
+
+function clearSessionCookie(res: ExpressResponse): void {
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: IS_PROD, sameSite: "lax", path: "/" });
+}
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
@@ -111,6 +129,7 @@ export function buildAuthRouter(env: Env): Router {
       }
 
       const tokens = (await tokenResponse.json()) as AzureTokenResponse;
+      setSessionCookie(res, tokens.access_token, tokens.expires_in);
       res.json(tokens);
     }),
   );
@@ -157,6 +176,8 @@ export function buildAuthRouter(env: Env): Router {
       }
 
       const tokens = (await tokenResponse.json()) as AzureTokenResponse;
+      setSessionCookie(res, tokens.access_token, tokens.expires_in);
+
       const acceptHeader = req.headers.accept ?? "";
 
       if (acceptHeader.includes("application/json")) {
@@ -187,7 +208,37 @@ export function buildAuthRouter(env: Env): Router {
   return r;
 }
 
-/** Standalone logout handler — wired at POST /auth/logout in the v1 router. */
+/**
+ * POST /auth/refresh — no auth middleware required.
+ * Reads the httpOnly session cookie and returns the access token if it is not expired.
+ * The frontend uses this to restore the in-memory token after a page refresh.
+ */
+export const refreshSession = asyncHandler(async (req, res) => {
+  const cookieToken: string | undefined = (req.cookies as Record<string, string | undefined>)[SESSION_COOKIE];
+
+  if (!cookieToken) {
+    res.status(401).json({ error: "no_session", message: "No active session" });
+    return;
+  }
+
+  // Decode without signature verification — the signature is validated by authJwt on every real API call.
+  // Here we only need to check expiry so we don't return obviously stale tokens.
+  const decoded = jwt.decode(cookieToken) as jwt.JwtPayload | null;
+  const now = Math.floor(Date.now() / 1000);
+  if (!decoded?.exp || decoded.exp < now) {
+    clearSessionCookie(res);
+    res.status(401).json({ error: "session_expired", message: "Session has expired, please sign in again" });
+    return;
+  }
+
+  // Refresh the cookie TTL so it stays alive as long as the user is active
+  const remainingSeconds = decoded.exp - now;
+  setSessionCookie(res, cookieToken, remainingSeconds);
+
+  res.json({ access_token: cookieToken, token_type: "Bearer", expires_in: remainingSeconds });
+});
+
+/** Standalone logout handler — wired at POST /api/v1/auth/logout in the v1 router. */
 export const logout = asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
@@ -208,5 +259,6 @@ export const logout = asyncHandler(async (req, res) => {
     data: { tokenHash, userId: req.userId, expiresAt },
   });
 
+  clearSessionCookie(res);
   res.json({ message: "Logged out successfully" });
 });

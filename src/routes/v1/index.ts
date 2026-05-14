@@ -99,13 +99,10 @@ export function buildV1Router(_env: Env): Router {
   r.post("/admin/bootstrap", bootstrapSuperAdmin);
 
   // ============================================================
-  // AUTH — /auth/azure/* is mounted directly on the app (see app.ts)
+  // AUTH — /auth/azure/* and /auth/refresh are mounted directly on the app (see app.ts)
   // ============================================================
   r.get("/auth/me", getMe);
   r.post("/auth/logout", logout);
-  r.post("/auth/refresh", requirePermission(Permission.SELF_PROFILE), (_req, res) => {
-    res.json({ message: "Token is valid", valid: true });
-  });
 
   // ============================================================
   // AUDIT
