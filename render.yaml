@@ -26,7 +26,7 @@ services:
       - key: FRONTEND_URL
         value: https://hr-management-system-steel-delta.vercel.app
       - key: AZURE_AD_AUTH_SCOPE
-        value: openid profile email offline_access
+        value: openid profile email offline_access api://e57ae03f-d46b-4c77-b46c-6588104b72f1/access_as_user
 
 databases:
   - name: echt-hr-db

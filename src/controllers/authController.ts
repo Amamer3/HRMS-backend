@@ -58,45 +58,35 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3): P
   throw lastError;
 }
 
-function apiDefaultScope(audience: string): string {
-  // Azure AD requires GUID-based resource identifier when client and resource share
-  // the same app registration — the api:// URI form triggers AADSTS90009.
+const OIDC_SCOPE_SET = new Set(["openid", "profile", "email", "offline_access"]);
+
+/**
+ * Fallback API scope when no explicit resource scope is configured.
+ * Uses GUID-based format (not api:// URI) to avoid AADSTS90009 when the client and
+ * resource share the same app registration.
+ */
+function guidDefaultScope(audience: string): string {
   const base = audience.startsWith("api://") ? audience.slice("api://".length) : audience;
   return base.endsWith("/.default") ? base : `${base}/.default`;
 }
 
-const OIDC_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
-
-/** True for Graph/API scopes that cannot be combined with `api://…/.default` (AADSTS70011). */
-function isResourceSpecificScope(scope: string, apiDefault: string): boolean {
-  const lower = scope.toLowerCase();
-  if (lower === apiDefault.toLowerCase()) return false;
-  if (OIDC_SCOPES.includes(lower as (typeof OIDC_SCOPES)[number])) return false;
-  if (lower.endsWith("/.default")) return true;
-  if (lower.includes(".read") || lower.includes(".write")) return true;
-  if (lower.startsWith("api://") || lower.startsWith("https://")) return true;
-  return false;
-}
-
 /**
- * OAuth scopes for authorize + token exchange.
- * Uses only OIDC scopes plus the API `.default` scope — never Graph scopes like `user.read`.
+ * Build OAuth scopes for the authorization URL and token exchange.
+ *
+ * If AZURE_AD_AUTH_SCOPE contains any non-OIDC scope (e.g. api://.../access_as_user),
+ * those are used as-is so Azure issues a proper v2 API access token.
+ * If only OIDC scopes are configured, falls back to the GUID-based /.default scope.
  */
 function buildAzureAuthScope(env: Env): string {
-  const apiScope = apiDefaultScope(env.AZURE_AD_AUDIENCE);
   const provided = env.AZURE_AD_AUTH_SCOPE.split(/\s+/).filter(Boolean);
-  const extras = provided.filter(s => !isResourceSpecificScope(s, apiScope));
+  const resourceScopes = provided.filter(s => !OIDC_SCOPE_SET.has(s.toLowerCase()));
 
-  for (const scope of provided) {
-    if (isResourceSpecificScope(scope, apiScope)) {
-      logger.warn(
-        { dropped: scope },
-        "Ignoring resource-specific OAuth scope (cannot combine with .default)",
-      );
-    }
-  }
+  const apiScopes =
+    resourceScopes.length > 0 ? resourceScopes : [guidDefaultScope(env.AZURE_AD_AUDIENCE)];
 
-  return Array.from(new Set([...OIDC_SCOPES, ...extras, apiScope])).join(" ");
+  return Array.from(
+    new Set(["openid", "profile", "email", "offline_access", ...apiScopes]),
+  ).join(" ");
 }
 
 function resolveDefaultRedirect(env: Env): string {
@@ -104,7 +94,7 @@ function resolveDefaultRedirect(env: Env): string {
     return `${env.FRONTEND_URL.replace(/\/$/, "")}/auth/callback`;
   }
   return env.NODE_ENV === "production"
-    ? "https://hrms.echt.gh/auth/callback"
+    ? "https://hr-management-system-steel-delta.vercel.app/auth/callback"
     : "http://localhost:3000/auth/callback";
 }
 
