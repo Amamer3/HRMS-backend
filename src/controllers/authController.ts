@@ -59,7 +59,10 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3): P
 }
 
 function apiDefaultScope(audience: string): string {
-  return audience.endsWith("/.default") ? audience : `${audience}/.default`;
+  // Azure AD requires GUID-based resource identifier when client and resource share
+  // the same app registration — the api:// URI form triggers AADSTS90009.
+  const base = audience.startsWith("api://") ? audience.slice("api://".length) : audience;
+  return base.endsWith("/.default") ? base : `${base}/.default`;
 }
 
 const OIDC_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
