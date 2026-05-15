@@ -62,13 +62,38 @@ function apiDefaultScope(audience: string): string {
   return audience.endsWith("/.default") ? audience : `${audience}/.default`;
 }
 
-/** OAuth scopes for authorize + token exchange. Always includes the API `.default` scope. */
+const OIDC_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
+
+/** True for Graph/API scopes that cannot be combined with `api://…/.default` (AADSTS70011). */
+function isResourceSpecificScope(scope: string, apiDefault: string): boolean {
+  const lower = scope.toLowerCase();
+  if (lower === apiDefault.toLowerCase()) return false;
+  if (OIDC_SCOPES.includes(lower as (typeof OIDC_SCOPES)[number])) return false;
+  if (lower.endsWith("/.default")) return true;
+  if (lower.includes(".read") || lower.includes(".write")) return true;
+  if (lower.startsWith("api://") || lower.startsWith("https://")) return true;
+  return false;
+}
+
+/**
+ * OAuth scopes for authorize + token exchange.
+ * Uses only OIDC scopes plus the API `.default` scope — never Graph scopes like `user.read`.
+ */
 function buildAzureAuthScope(env: Env): string {
   const apiScope = apiDefaultScope(env.AZURE_AD_AUDIENCE);
   const provided = env.AZURE_AD_AUTH_SCOPE.split(/\s+/).filter(Boolean);
-  return Array.from(new Set(["openid", "profile", "email", "offline_access", ...provided, apiScope])).join(
-    " ",
-  );
+  const extras = provided.filter(s => !isResourceSpecificScope(s, apiScope));
+
+  for (const scope of provided) {
+    if (isResourceSpecificScope(scope, apiScope)) {
+      logger.warn(
+        { dropped: scope },
+        "Ignoring resource-specific OAuth scope (cannot combine with .default)",
+      );
+    }
+  }
+
+  return Array.from(new Set([...OIDC_SCOPES, ...extras, apiScope])).join(" ");
 }
 
 function resolveDefaultRedirect(env: Env): string {
