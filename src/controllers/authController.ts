@@ -16,14 +16,14 @@ function setSessionCookie(res: ExpressResponse, token: string, expiresIn: number
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: IS_PROD,
-    sameSite: "lax",
+    sameSite: IS_PROD ? "none" : "lax",
     maxAge: expiresIn * 1000,
     path: "/",
   });
 }
 
 function clearSessionCookie(res: ExpressResponse): void {
-  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: IS_PROD, sameSite: "lax", path: "/" });
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: IS_PROD, sameSite: IS_PROD ? "none" : "lax", path: "/" });
 }
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });

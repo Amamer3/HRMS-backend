@@ -23,6 +23,8 @@ services:
         sync: false
       - key: AZURE_AD_AUDIENCE
         sync: false
+      - key: FRONTEND_URL
+        value: https://hr-management-system-steel-delta.vercel.app
 
 databases:
   - name: echt-hr-db

@@ -14,6 +14,8 @@ const envSchema = z.object({
   AZURE_AD_AUDIENCE: z.string().min(1),
   AZURE_AD_AUTH_SCOPE: z.string().default('openid profile email offline_access user.read'),
 
+  FRONTEND_URL: z.string().url().optional(),
+
   MS_GRAPH_TENANT_ID: z.string().optional(),
   MS_GRAPH_CLIENT_ID: z.string().optional(),
   MS_GRAPH_CLIENT_SECRET: z.string().optional(),
