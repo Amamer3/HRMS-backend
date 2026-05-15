@@ -46,11 +46,24 @@ export function createApp(env: Env) {
           ? true
           : (origin, callback) => {
               if (!origin || corsOrigins.includes(origin)) callback(null, true);
-              else callback(new Error(`CORS blocked for origin: ${origin}`));
+              // Pass false (not an Error) so cors skips setting the header without
+              // calling next(err), which would bypass our error handler and return 500.
+              else callback(null, false);
             },
       credentials: true,
     }),
   );
+
+  // Explicit 403 for disallowed origins — runs after cors() so it only fires
+  // when cors declined to set the header (origin present but not in allowlist).
+  app.use((req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {
+    const origin = req.headers.origin;
+    if (origin && corsOrigins.length > 0 && !corsOrigins.includes(origin)) {
+      res.status(403).json({ error: "cors_blocked", message: "Origin not allowed" });
+      return;
+    }
+    next();
+  });
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));
