@@ -35,7 +35,22 @@ export function createApp(env: Env) {
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(helmet());
-  app.use(cors({ origin: env.FRONTEND_URL ?? true, credentials: true }));
+  const corsOrigins = [env.FRONTEND_URL, "http://localhost:3000"].filter((o): o is string =>
+    Boolean(o),
+  );
+
+  app.use(
+    cors({
+      origin:
+        corsOrigins.length === 0
+          ? true
+          : (origin, callback) => {
+              if (!origin || corsOrigins.includes(origin)) callback(null, true);
+              else callback(new Error(`CORS blocked for origin: ${origin}`));
+            },
+      credentials: true,
+    }),
+  );
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));

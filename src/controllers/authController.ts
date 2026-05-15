@@ -58,18 +58,88 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3): P
   throw lastError;
 }
 
-function buildAzureAuthScope(envScope: string | undefined): string {
-  const provided = envScope?.split(/\s+/).filter(Boolean) ?? [];
-  return Array.from(new Set(provided)).join(" ");
+function apiDefaultScope(audience: string): string {
+  return audience.endsWith("/.default") ? audience : `${audience}/.default`;
+}
+
+/** OAuth scopes for authorize + token exchange. Always includes the API `.default` scope. */
+function buildAzureAuthScope(env: Env): string {
+  const apiScope = apiDefaultScope(env.AZURE_AD_AUDIENCE);
+  const provided = env.AZURE_AD_AUTH_SCOPE.split(/\s+/).filter(Boolean);
+  return Array.from(new Set(["openid", "profile", "email", "offline_access", ...provided, apiScope])).join(
+    " ",
+  );
+}
+
+function resolveDefaultRedirect(env: Env): string {
+  if (env.FRONTEND_URL) {
+    return `${env.FRONTEND_URL.replace(/\/$/, "")}/auth/callback`;
+  }
+  return env.NODE_ENV === "production"
+    ? "https://hrms.echt.gh/auth/callback"
+    : "http://localhost:3000/auth/callback";
+}
+
+function tokenPayload(tokens: AzureTokenResponse) {
+  return {
+    access_token: tokens.access_token,
+    id_token: tokens.id_token,
+    refresh_token: tokens.refresh_token,
+    token_type: tokens.token_type,
+    expires_in: tokens.expires_in,
+    scope: tokens.scope,
+  };
+}
+
+async function exchangeAuthorizationCode(
+  env: Env,
+  code: string,
+  redirectUri: string,
+): Promise<AzureTokenResponse> {
+  const tokenResponse = await fetchWithRetry(
+    `https://login.microsoftonline.com/${env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: env.AZURE_AD_CLIENT_ID,
+        client_secret: env.AZURE_AD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        scope: buildAzureAuthScope(env),
+      }).toString(),
+    },
+  );
+
+  const body = (await tokenResponse.json()) as AzureTokenResponse;
+
+  if (!tokenResponse.ok) {
+    logger.error({ error: body.error, description: body.error_description }, "Azure token exchange failed");
+    throw Object.assign(new Error(body.error_description ?? body.error ?? "token_exchange_failed"), {
+      status: tokenResponse.status,
+      azure: body,
+    });
+  }
+
+  if (!body.access_token) {
+    logger.error({ scope: body.scope }, "Azure token response missing access_token");
+    throw Object.assign(
+      new Error(
+        "Microsoft sign-in succeeded but no API access token was returned. " +
+          "Ensure the app registration exposes an API scope and AZURE_AD_AUTH_SCOPE includes it.",
+      ),
+      { status: 502, code: "no_access_token" },
+    );
+  }
+
+  return body;
 }
 
 export function buildAuthRouter(env: Env): Router {
   const r = Router();
 
-  const defaultRedirect =
-    env.NODE_ENV === "production"
-      ? "https://hrms.echt.gh/auth/callback"
-      : "http://localhost:3000/auth/callback";
+  const defaultRedirect = resolveDefaultRedirect(env);
 
   // GET /auth/azure/login
   r.get("/login", (req, res) => {
@@ -85,7 +155,7 @@ export function buildAuthRouter(env: Env): Router {
         client_id: env.AZURE_AD_CLIENT_ID,
         response_type: "code",
         redirect_uri: redirectUri,
-        scope: buildAzureAuthScope(env.AZURE_AD_AUTH_SCOPE),
+        scope: buildAzureAuthScope(env),
         response_mode: "query",
         state,
       }).toString();
@@ -102,35 +172,24 @@ export function buildAuthRouter(env: Env): Router {
 
       if (!code) throw new BadRequestError("No authorization code provided");
 
-      const tokenResponse = await fetchWithRetry(
-        `https://login.microsoftonline.com/${env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: env.AZURE_AD_CLIENT_ID,
-            client_secret: env.AZURE_AD_CLIENT_SECRET,
-            grant_type: "authorization_code",
-            code,
-            redirect_uri: redirectUri,
-            scope: buildAzureAuthScope(env.AZURE_AD_AUTH_SCOPE),
-          }).toString(),
-        },
-      );
-
-      if (!tokenResponse.ok) {
-        const errorData = (await tokenResponse.json()) as AzureTokenResponse;
-        logger.error({ error: errorData.error }, "Azure token exchange failed");
-        res.status(tokenResponse.status).json({
-          error: errorData.error ?? "token_exchange_failed",
-          description: errorData.error_description,
+      try {
+        const tokens = await exchangeAuthorizationCode(env, code, redirectUri);
+        setSessionCookie(res, tokens.access_token, tokens.expires_in);
+        res.json(tokenPayload(tokens));
+      } catch (err: unknown) {
+        const e = err as Error & { status?: number; azure?: AzureTokenResponse; code?: string };
+        if (e.azure) {
+          res.status(e.status ?? 400).json({
+            error: e.azure.error ?? "token_exchange_failed",
+            description: e.azure.error_description,
+          });
+          return;
+        }
+        res.status(e.status ?? 502).json({
+          error: e.code ?? "token_exchange_failed",
+          message: e.message,
         });
-        return;
       }
-
-      const tokens = (await tokenResponse.json()) as AzureTokenResponse;
-      setSessionCookie(res, tokens.access_token, tokens.expires_in);
-      res.json(tokens);
     }),
   );
 
@@ -149,47 +208,31 @@ export function buildAuthRouter(env: Env): Router {
         return;
       }
 
-      const tokenResponse = await fetchWithRetry(
-        `https://login.microsoftonline.com/${env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: env.AZURE_AD_CLIENT_ID,
-            client_secret: env.AZURE_AD_CLIENT_SECRET,
-            grant_type: "authorization_code",
-            code: code as string,
-            redirect_uri: redirectUri,
-            scope: buildAzureAuthScope(env.AZURE_AD_AUTH_SCOPE),
-          }).toString(),
-        },
-      );
-
-      if (!tokenResponse.ok) {
-        const errorData = (await tokenResponse.json()) as AzureTokenResponse;
-        logger.error({ error: errorData.error }, "Token exchange error in callback");
-        res.status(tokenResponse.status).json({
-          error: errorData.error ?? "token_exchange_failed",
-          description: errorData.error_description,
+      let tokens: AzureTokenResponse;
+      try {
+        tokens = await exchangeAuthorizationCode(env, code as string, redirectUri);
+      } catch (err: unknown) {
+        const e = err as Error & { status?: number; azure?: AzureTokenResponse; code?: string };
+        if (e.azure) {
+          res.status(e.status ?? 400).json({
+            error: e.azure.error ?? "token_exchange_failed",
+            description: e.azure.error_description,
+          });
+          return;
+        }
+        res.status(e.status ?? 502).json({
+          error: e.code ?? "token_exchange_failed",
+          message: e.message,
         });
         return;
       }
 
-      const tokens = (await tokenResponse.json()) as AzureTokenResponse;
       setSessionCookie(res, tokens.access_token, tokens.expires_in);
 
       const acceptHeader = req.headers.accept ?? "";
 
       if (acceptHeader.includes("application/json")) {
-        res.json({
-          access_token: tokens.access_token,
-          id_token: tokens.id_token,
-          refresh_token: tokens.refresh_token,
-          token_type: tokens.token_type,
-          expires_in: tokens.expires_in,
-          scope: tokens.scope,
-          state,
-        });
+        res.json({ ...tokenPayload(tokens), state });
         return;
       }
 
