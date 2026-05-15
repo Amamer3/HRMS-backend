@@ -71,18 +71,47 @@ function guidDefaultScope(audience: string): string {
 }
 
 /**
+ * Returns true for scopes that belong to this app's own API registration.
+ * Rejects bare Graph permission names (e.g. "User.Read", "mail.read") so they
+ * never leak into the authorization URL and cause Azure to return a Graph token.
+ */
+function isOwnApiScope(scope: string, clientId: string, audience: string): boolean {
+  const lower = scope.toLowerCase();
+  const guidFallback = guidDefaultScope(audience).toLowerCase();
+  // Explicit api:// scope for this app
+  if (lower.startsWith(`api://${clientId.toLowerCase()}`)) return true;
+  // Bare GUID/.default fallback
+  if (lower === guidFallback) return true;
+  // audience itself (e.g. api://e57ae...)
+  if (lower === audience.toLowerCase()) return true;
+  return false;
+}
+
+/**
  * Build OAuth scopes for the authorization URL and token exchange.
  *
- * If AZURE_AD_AUTH_SCOPE contains any non-OIDC scope (e.g. api://.../access_as_user),
- * those are used as-is so Azure issues a proper v2 API access token.
- * If only OIDC scopes are configured, falls back to the GUID-based /.default scope.
+ * Only scopes for this app's own API (api://<client-id>/...) are forwarded.
+ * Bare Graph permission names (User.Read, mail.read, …) are silently dropped —
+ * they cause Azure to return a Microsoft Graph token instead of an app token.
+ * Falls back to the GUID-based /.default scope when no explicit API scope is set.
  */
 function buildAzureAuthScope(env: Env): string {
   const provided = env.AZURE_AD_AUTH_SCOPE.split(/\s+/).filter(Boolean);
-  const resourceScopes = provided.filter(s => !OIDC_SCOPE_SET.has(s.toLowerCase()));
 
-  const apiScopes =
-    resourceScopes.length > 0 ? resourceScopes : [guidDefaultScope(env.AZURE_AD_AUDIENCE)];
+  const ownApiScopes: string[] = [];
+  for (const scope of provided) {
+    if (OIDC_SCOPE_SET.has(scope.toLowerCase())) continue;
+    if (isOwnApiScope(scope, env.AZURE_AD_CLIENT_ID, env.AZURE_AD_AUDIENCE)) {
+      ownApiScopes.push(scope);
+    } else {
+      logger.warn(
+        { scope },
+        "Dropping non-app scope from auth request — configure api://<client-id>/... scopes only",
+      );
+    }
+  }
+
+  const apiScopes = ownApiScopes.length > 0 ? ownApiScopes : [guidDefaultScope(env.AZURE_AD_AUDIENCE)];
 
   return Array.from(
     new Set(["openid", "profile", "email", "offline_access", ...apiScopes]),
@@ -100,7 +129,9 @@ function resolveDefaultRedirect(env: Env): string {
 
 function tokenPayload(tokens: AzureTokenResponse) {
   return {
-    access_token: tokens.access_token,
+    // Return the id_token as access_token so the frontend uses an app-scoped identity
+    // token as its Bearer token — not the Graph-scoped access_token from Azure.
+    access_token: tokens.id_token ?? tokens.access_token,
     id_token: tokens.id_token,
     refresh_token: tokens.refresh_token,
     token_type: tokens.token_type,
@@ -140,14 +171,14 @@ async function exchangeAuthorizationCode(
     });
   }
 
-  if (!body.access_token) {
-    logger.error({ scope: body.scope }, "Azure token response missing access_token");
+  if (!body.id_token) {
+    logger.error({ scope: body.scope }, "Azure token response missing id_token — ensure 'openid' is in AZURE_AD_AUTH_SCOPE");
     throw Object.assign(
       new Error(
-        "Microsoft sign-in succeeded but no API access token was returned. " +
-          "Ensure the app registration exposes an API scope and AZURE_AD_AUTH_SCOPE includes it.",
+        "Microsoft sign-in succeeded but no identity token was returned. " +
+          "Ensure 'openid' is included in AZURE_AD_AUTH_SCOPE.",
       ),
-      { status: 502, code: "no_access_token" },
+      { status: 502, code: "no_id_token" },
     );
   }
 
@@ -192,7 +223,7 @@ export function buildAuthRouter(env: Env): Router {
 
       try {
         const tokens = await exchangeAuthorizationCode(env, code, redirectUri);
-        setSessionCookie(res, tokens.access_token, tokens.expires_in);
+        setSessionCookie(res, tokens.id_token!, tokens.expires_in);
         res.json(tokenPayload(tokens));
       } catch (err: unknown) {
         const e = err as Error & { status?: number; azure?: AzureTokenResponse; code?: string };
@@ -245,7 +276,7 @@ export function buildAuthRouter(env: Env): Router {
         return;
       }
 
-      setSessionCookie(res, tokens.access_token, tokens.expires_in);
+      setSessionCookie(res, tokens.id_token!, tokens.expires_in);
 
       const acceptHeader = req.headers.accept ?? "";
 
@@ -257,7 +288,7 @@ export function buildAuthRouter(env: Env): Router {
       // Hash-fragment redirect — tokens never appear in server logs or referrer headers
       const frontendUrl = new URL(redirectUri);
       const hashParams = new URLSearchParams();
-      hashParams.set("access_token", tokens.access_token);
+      hashParams.set("access_token", tokens.id_token!);
       if (tokens.id_token) hashParams.set("id_token", tokens.id_token);
       if (state) hashParams.set("state", state as string);
       frontendUrl.hash = hashParams.toString();
