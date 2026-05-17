@@ -5,6 +5,9 @@ import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 import { pinoHttp } from "pino-http";
 import pino from "pino";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { apiReference } from "@scalar/express-api-reference";
 import type { Env } from "./config/env.js";
 import { createAuthMiddleware } from "./middleware/authJwt.js";
 import { auditContext, auditHttpMutations } from "./middleware/auditMiddleware.js";
@@ -29,11 +32,20 @@ const tokenLimiter = rateLimit({
   message: { error: "too_many_requests", message: "Too many token requests, please try again later" },
 });
 
+const openApiSpec = readFileSync(join(process.cwd(), "docs", "openapi.yaml"), "utf-8");
+
 export function createApp(env: Env) {
   const logger = pino({ level: env.LOG_LEVEL });
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
+
+  // Docs routes are public and registered before helmet so Scalar's CDN is not blocked by CSP
+  app.get("/api/v1/docs/openapi.yaml", (_req, res) => {
+    res.type("text/yaml").send(openApiSpec);
+  });
+  app.use("/api/v1/docs", apiReference({ url: "/api/v1/docs/openapi.yaml" }));
+
   app.use(helmet());
   const corsOrigins = [env.FRONTEND_URL, "http://localhost:3000"].filter((o): o is string =>
     Boolean(o),

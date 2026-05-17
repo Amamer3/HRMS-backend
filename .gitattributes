@@ -1,0 +1,2 @@
+# Ensure shell scripts always use LF so they work in Linux containers
+*.sh text eol=lf
